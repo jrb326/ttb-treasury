@@ -1,0 +1,62 @@
+[
+  {
+    "file": "oldtom-pass.png",
+    "expectedVerdict": "pass",
+    "expectedFlags": [],
+    "expectedApplication": {
+      "brandName": "Old Tom Distillery",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "file": "blackridge-abv-mismatch.png",
+    "expectedVerdict": "flag",
+    "expectedFlags": ["alcohol_content"],
+    "expectedApplication": {
+      "brandName": "Black Ridge",
+      "classType": "Kentucky Straight Bourbon Whiskey",
+      "alcoholContent": "45% Alc./Vol. (90 Proof)",
+      "netContents": "750 mL",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "file": "stonesthrow-style.png",
+    "expectedVerdict": "pass",
+    "expectedFlags": [],
+    "expectedApplication": {
+      "brandName": "Stone's Throw",
+      "classType": "Straight Rye Whisky",
+      "alcoholContent": "40% Alc./Vol. (80 Proof)",
+      "netContents": "750 mL",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "file": "aurora-warn-titlecase.png",
+    "expectedVerdict": "flag",
+    "expectedFlags": ["warning"],
+    "expectedApplication": {
+      "brandName": "Aurora Reserve",
+      "classType": "American Gin",
+      "alcoholContent": "47% Alc./Vol.",
+      "netContents": "750 mL",
+      "countryOfOrigin": "United States"
+    }
+  },
+  {
+    "file": "harbor-warn-missing.png",
+    "expectedVerdict": "flag",
+    "expectedFlags": ["warning"],
+    "expectedApplication": {
+      "brandName": "Harbor Light",
+      "classType": "Pale Ale",
+      "alcoholContent": "5.2% Alc./Vol.",
+      "netContents": "355 mL",
+      "countryOfOrigin": "United States"
+    }
+  }
+]

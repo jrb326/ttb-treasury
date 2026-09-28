@@ -1,0 +1,6 @@
+file,brand_name,class_type,alcohol_content,net_contents,country_of_origin
+oldtom-pass.png,Old Tom,"Gin, Navy Strength",47.5% ABV,750 mL,USA
+blackridge-abv-mismatch.png,Black Ridge,Straight Rye Whiskey,50.5% ABV,750 mL,USA
+stonesthrow-style.png,Stone Throw,Pot Still Whiskey,40% ABV,750 mL,USA
+aurora-warn-titlecase.png,Aurora,Aged Rum,40% ABV,750 mL,USA
+harbor-warn-missing.png,Harbor,American Whiskey,43% ABV,750 mL,USA

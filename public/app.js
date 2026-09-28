@@ -1,0 +1,623 @@
+/* TTB Label Checker — plain JS, no deps. All checks go through POST /api/verify. */
+"use strict";
+
+// ── constants ────────────────────────────────────────────────────────────────
+const TURNSTILE_SITEKEY = "0x4AAAAAAFHT209vgWKKWBl2"; // real sitekey
+// Hosts the widget is registered for. Production host: add it here + redeploy.
+const TURNSTILE_HOSTS = ["localhost", "127.0.0.1"];
+const MAX_ITEMS = 10;          // server limit per request
+const MIN_TOKEN_LEN = 55;      // shorter tokens are test placeholders → treat as absent
+
+const MSG_UNREACHABLE = "Couldn't reach the checker. Your image wasn't lost — try again.";
+const MSG_TOKEN = "The robot check wasn't done (or has expired). Tick the box above, then try again.";
+
+const FIELD_ORDER = [
+  ["brandName", "Brand name"],
+  ["classType", "Class / type"],
+  ["alcoholContent", "Alcohol content"],
+  ["netContents", "Net contents"],
+  ["countryOfOrigin", "Country of origin"],
+];
+
+const PILL_LABEL = {
+  pass: "Match",
+  flag: "Check",
+  missing: "Not on label",
+  error: "Error",
+  not_checked: "Not checked",
+};
+
+const CSV_COLUMNS = {
+  file: "file",
+  brand_name: "brandName",
+  class_type: "classType",
+  alcohol_content: "alcoholContent",
+  net_contents: "netContents",
+  country_of_origin: "countryOfOrigin",
+};
+
+// ── state ────────────────────────────────────────────────────────────────────
+const state = {
+  singleFile: null,          // File
+  singlePreviewUrl: null,
+  singleTimer: null,         // interval id
+  batchFiles: [],            // File[]
+  csv: new Map(),            // filename -> {brandName, classType, ...}
+  batchRunning: false,
+  batchChunks: [],           // File[][]
+  batchDone: 0,              // files with a verdict
+  batchStartMs: 0,
+  widgetId: null,
+};
+
+// ── tiny DOM helpers (server strings only ever go through textContent) ───────
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = String(text);
+  return n;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+function show(node, on) { node.hidden = !on; }
+
+// ── Turnstile lifecycle ──────────────────────────────────────────────────────
+function renderWidget() {
+  if (state.widgetId !== null || !window.turnstile) return;
+  state.widgetId = turnstile.render("#turnstile", {
+    sitekey: TURNSTILE_SITEKEY,
+    action: "verify",
+    callback: function () {
+      $("turnstile-status").textContent = "Robot check done. You can run a check now.";
+    },
+  });
+  $("turnstile-status").textContent = "Tick the box above before each check.";
+}
+
+function waitForWidget() {
+  if (window.turnstile) { renderWidget(); return; }
+  let waited = 0;
+  const t = setInterval(function () {
+    waited += 400;
+    if (window.turnstile) { clearInterval(t); renderWidget(); }
+    else if (waited >= 10000) {
+      clearInterval(t);
+      $("turnstile-status").textContent =
+        "The robot check didn't load. Check your connection and reload the page.";
+    }
+  }, 400);
+}
+
+function resetTurnstile() {
+  // Token is single-use: reset after every attempt, success or failure.
+  if (window.turnstile && state.widgetId !== null) turnstile.reset(state.widgetId);
+  $("turnstile-status").textContent = "Tick the robot box again before the next check.";
+}
+
+function getToken() {
+  if (!window.turnstile || state.widgetId === null) return null;
+  const t = turnstile.getResponse(state.widgetId);
+  if (!t || t.length < MIN_TOKEN_LEN) return null; // placeholder / expired → absent
+  return t;
+}
+
+// ── verify request ───────────────────────────────────────────────────────────
+// Resolves with results[]; rejects with {kind: "token"|"unreachable"|"http400", text}.
+async function verifyRequest(items) {
+  const token = getToken();
+  if (!token) throw { kind: "token" };
+
+  let res;
+  try {
+    res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: items, turnstile: { token: token } }),
+    });
+  } catch (e) {
+    resetTurnstile();
+    throw { kind: "unreachable" };
+  }
+  resetTurnstile();
+
+  if (res.status === 403) throw { kind: "token" };
+  if (res.status === 400) {
+    let text = "";
+    try {
+      const body = await res.json();
+      text = body && body.error ? String(body.error) : "";
+    } catch (e) { /* fall through */ }
+    if (!text) { try { text = await res.text(); } catch (e) { /* ignore */ } }
+    throw { kind: "http400", text: text || "The request was rejected (HTTP 400)." };
+  }
+  if (!res.ok) throw { kind: "unreachable" };
+
+  const data = await res.json();
+  if (!data || !Array.isArray(data.results)) throw { kind: "unreachable" };
+  return data.results;
+}
+
+function errorFor(kind, text) {
+  if (kind === "token") return MSG_TOKEN;
+  if (kind === "unreachable") return MSG_UNREACHABLE;
+  return text || "Something went wrong. Please try again.";
+}
+
+// ── alerts ───────────────────────────────────────────────────────────────────
+function showAlert(container, message, onRetry, retryLabel) {
+  clear(container);
+  show(container, true);
+  container.appendChild(el("span", null, message));
+  if (onRetry) {
+    const b = el("button", "btn", retryLabel || "Try again");
+    b.type = "button";
+    b.addEventListener("click", onRetry);
+    container.appendChild(b);
+  }
+}
+
+// ── result rendering (shared by single card and batch rows) ─────────────────
+function statusPill(status) {
+  const s = el("span", "pill " + (status || "not_checked"), PILL_LABEL[status] || status || "—");
+  return s;
+}
+
+function latencyBadge(ms) {
+  const secs = (ms / 1000).toFixed(1);
+  const frag = document.createDocumentFragment();
+  const b = el("span", "latency" + (ms > 5000 ? " slow" : ""), "checked in " + secs + " s");
+  frag.appendChild(b);
+  if (ms > 5000) frag.appendChild(el("span", "latency-note", "Slow — took over 5 seconds."));
+  return frag;
+}
+
+function renderResult(result) {
+  const wrap = el("div", "result");
+
+  const v = result.status || "error";
+  const banner = el("div", "verdict " + v);
+  if (v === "pass") {
+    banner.appendChild(el("span", null, "PASS — looks good"));
+  } else if (v === "flag") {
+    banner.appendChild(el("span", null, "FLAG — differences found, review needed"));
+  } else {
+    banner.appendChild(el("span", null, "ERROR — could not check"));
+    banner.appendChild(el("small", null,
+      "AI couldn't read this label (time-out or failure) — retry or reject image for resubmission."));
+  }
+  wrap.appendChild(banner);
+
+  wrap.appendChild(latencyBadge(result.latencyMs || 0));
+
+  if (Array.isArray(result.imageIssues) && result.imageIssues.length) {
+    const box = el("p", "issues", "Problems reading this image:");
+    const ul = el("ul", "summary issues");
+    result.imageIssues.forEach(function (s) { ul.appendChild(el("li", null, String(s))); });
+    wrap.appendChild(box);
+    wrap.appendChild(ul);
+  }
+
+  const fields = result.fields || {};
+  const rows = FIELD_ORDER.filter(function (f) { return fields[f[0]]; });
+  if (rows.length) {
+    const table = el("table", "fields");
+    const thead = el("thead");
+    const hr = el("tr");
+    ["Field", "Application value", "On label", "Result"].forEach(function (h) {
+      hr.appendChild(el("th", null, h));
+    });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    const tbody = el("tbody");
+    rows.forEach(function (f) {
+      const val = fields[f[0]] || {};
+      const tr = el("tr");
+      tr.appendChild(el("td", null, f[1]));
+      tr.appendChild(el("td", null, val.expected === undefined || val.expected === null || val.expected === "" ? "—" : String(val.expected)));
+      const labelCell = el("td", val.onLabel ? null : "missing-val",
+        val.onLabel ? String(val.onLabel) : "not found on label");
+      tr.appendChild(labelCell);
+      const resCell = el("td");
+      resCell.appendChild(statusPill(val.status));
+      if (val.note) resCell.appendChild(el("span", "pill-note", String(val.note)));
+      tr.appendChild(resCell);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+  }
+
+  if (fields.warning) {
+    const w = el("p", "warn-card");
+    w.textContent = "Warning: " + String(fields.warning);
+    wrap.appendChild(w);
+  }
+
+  if (Array.isArray(result.summary) && result.summary.length) {
+    const ul = el("ul", "summary");
+    result.summary.forEach(function (s) { ul.appendChild(el("li", null, String(s))); });
+    wrap.appendChild(ul);
+  }
+
+  return wrap;
+}
+
+// ── CSV parsing (RFC4180-ish: quotes, doubled quotes, CRLF) ─────────────────
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = "", inQ = false, i = 0;
+  text = text.replace(/^\uFEFF/, "");
+  while (i < text.length) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQ = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"') { inQ = true; i++; continue; }
+    if (c === ",") { row.push(field); field = ""; i++; continue; }
+    if (c === "\r") { i++; continue; }
+    if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+    field += c; i++;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function csvToMap(rows) {
+  const map = new Map();
+  if (!rows.length) return map;
+  const header = rows[0].map(function (h) { return h.trim().toLowerCase(); });
+  const idx = {};
+  Object.keys(CSV_COLUMNS).forEach(function (col) {
+    const at = header.indexOf(col);
+    if (at >= 0) idx[CSV_COLUMNS[col]] = at;
+  });
+  if (idx.file === undefined) throw new Error("missing file column");
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const file = (row[idx.file] || "").trim();
+    if (!file) continue;
+    const rec = {};
+    Object.keys(idx).forEach(function (key) {
+      if (key !== "file") rec[key] = (row[idx[key]] || "").trim();
+    });
+    map.set(file, rec);
+  }
+  return map;
+}
+
+function csvEscape(v) {
+  v = String(v === undefined || v === null ? "" : v);
+  return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+// ── single flow ──────────────────────────────────────────────────────────────
+function onSingleFile(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  state.singleFile = file;
+  if (state.singlePreviewUrl) URL.revokeObjectURL(state.singlePreviewUrl);
+  state.singlePreviewUrl = URL.createObjectURL(file);
+  const img = $("single-preview");
+  img.src = state.singlePreviewUrl;
+  show(img, true);
+  show($("single-clear"), true);
+  show($("single-prefill"), false);
+
+  // Prefill from CSV when the filename matches.
+  const rec = state.csv.get(file.name);
+  if (rec) {
+    $("s-brand").value = rec.brandName || "";
+    $("s-class").value = rec.classType || "";
+    $("s-abv").value = rec.alcoholContent || "";
+    $("s-net").value = rec.netContents || "";
+    $("s-country").value = rec.countryOfOrigin || "";
+    show($("single-prefill"), true);
+  }
+
+  show($("single-result"), false);
+  clear($("single-result"));
+  show($("single-error"), false);
+  $("single-check").disabled = false;
+}
+
+function clearSingle() {
+  state.singleFile = null;
+  $("single-file").value = "";
+  if (state.singlePreviewUrl) { URL.revokeObjectURL(state.singlePreviewUrl); state.singlePreviewUrl = null; }
+  show($("single-preview"), false);
+  show($("single-clear"), false);
+  show($("single-prefill"), false);
+  $("single-check").disabled = true;
+}
+
+function fileToDataUrl(file) {
+  return new Promise(function (resolve, reject) {
+    const r = new FileReader();
+    r.onload = function () { resolve(String(r.result)); };
+    r.onerror = function () { reject(new Error("read failed")); };
+    r.readAsDataURL(file);
+  });
+}
+
+function startSingleTimer() {
+  const t0 = Date.now();
+  $("single-timer-text").textContent = "Checking… 0 s";
+  show($("single-status"), true);
+  state.singleTimer = setInterval(function () {
+    $("single-timer-text").textContent =
+      "Checking… " + Math.round((Date.now() - t0) / 1000) + " s";
+  }, 1000);
+}
+function stopSingleTimer() {
+  if (state.singleTimer) { clearInterval(state.singleTimer); state.singleTimer = null; }
+  show($("single-status"), false);
+}
+
+async function checkSingle() {
+  if (!state.singleFile || state.singleTimer) return;
+  const brand = $("s-brand").value.trim();
+  if (!brand) {
+    showAlert($("single-error"), "Please enter the brand name exactly as filed in the application.");
+    return;
+  }
+
+  const app = { brandName: brand };
+  const cls = $("s-class").value.trim();
+  const abv = $("s-abv").value.trim();
+  const net = $("s-net").value.trim();
+  const country = $("s-country").value.trim();
+  if (cls) app.classType = cls;
+  if (abv) app.alcoholContent = abv;
+  if (net) app.netContents = net;
+  if (country) app.countryOfOrigin = country;
+
+  const btn = $("single-check");
+  btn.disabled = true;
+  show($("single-error"), false);
+  clear($("single-result"));
+  startSingleTimer();
+
+  try {
+    const image = await fileToDataUrl(state.singleFile);
+    const results = await verifyRequest([{ file: state.singleFile.name, image: image, app: app }]);
+    stopSingleTimer();
+    const out = $("single-result");
+    clear(out);
+    if (results.length) out.appendChild(renderResult(results[0]));
+    show(out, true);
+  } catch (err) {
+    stopSingleTimer();
+    showAlert($("single-error"), errorFor(err.kind, err.text), checkSingle);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── batch flow ───────────────────────────────────────────────────────────────
+function onBatchFiles(e) {
+  state.batchFiles = Array.prototype.slice.call(e.target.files || []);
+  renderBatchPrep();
+}
+
+function onBatchCsv(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function () {
+    try {
+      state.csv = csvToMap(parseCsv(String(reader.result)));
+    } catch (err) {
+      state.csv = new Map();
+      file_input_reset_csv(e);
+      showAlert($("batch-mismatch"),
+        "That CSV couldn't be read. It needs a header row with a 'file' column — see samples.csv.");
+      renderBatchPrep();
+      return;
+    }
+    show($("csv-clear"), true);
+    renderBatchPrep();
+  };
+  reader.readAsText(file);
+}
+
+function file_input_reset_csv(e) { e.target.value = ""; }
+
+function renderBatchPrep() {
+  const box = $("batch-mismatch");
+  clear(box);
+  show($("batch-mismatch"), false);
+
+  const names = state.batchFiles.map(function (f) { return f.name; });
+  const csvLoaded = state.csv.size > 0;
+
+  if (csvLoaded) {
+    const imagesNoRow = names.filter(function (n) { return !state.csv.has(n); });
+    if (imagesNoRow.length) {
+      const card = el("div", "warn-card");
+      card.appendChild(el("h3", null, "No application data for " + imagesNoRow.length + " photo(s)"));
+      card.appendChild(el("p", null,
+        "These photos have no matching CSV row. They will still be checked — warnings (spelling, missing required text) still apply — but there is nothing to compare against:"));
+      const ul = el("ul");
+      imagesNoRow.forEach(function (n) { ul.appendChild(el("li", null, n)); });
+      card.appendChild(ul);
+      box.appendChild(card);
+    }
+    const rowsNoImage = [];
+    state.csv.forEach(function (_rec, file) {
+      if (names.indexOf(file) === -1) rowsNoImage.push(file);
+    });
+    if (rowsNoImage.length) {
+      const card = el("div", "warn-card");
+      card.appendChild(el("h3", null, rowsNoImage.length + " CSV row(s) match no chosen photo"));
+      card.appendChild(el("p", null,
+        "These won't be sent. Check the filenames match the photos exactly (including extension):"));
+      const ul = el("ul");
+      rowsNoImage.forEach(function (n) { ul.appendChild(el("li", null, n)); });
+      card.appendChild(ul);
+      box.appendChild(card);
+    }
+  }
+
+  const hasContent = box.childNodes.length > 0;
+  show(box, hasContent);
+  $("batch-start").disabled = state.batchRunning || state.batchFiles.length === 0;
+}
+
+function appForFile(file) {
+  const rec = state.csv.get(file.name);
+  if (!rec) return null;
+  const app = { brandName: rec.brandName || "" };
+  if (rec.classType) app.classType = rec.classType;
+  if (rec.alcoholContent) app.alcoholContent = rec.alcoholContent;
+  if (rec.netContents) app.netContents = rec.netContents;
+  if (rec.countryOfOrigin) app.countryOfOrigin = rec.countryOfOrigin;
+  return app;
+}
+
+function setProgress(done, total, prefix) {
+  show($("batch-progress"), true);
+  $("batch-bar-fill").style.width = (total ? Math.round((done / total) * 100) : 0) + "%";
+  $("batch-progress-text").textContent =
+    (prefix || ("Processing " + done + " / " + total + "…"));
+}
+
+function appendBatchRow(result) {
+  const rec = state.csv.get(result.file);
+  const brand = (rec && rec.brandName) ||
+    (result.fields && result.fields.brandName && result.fields.brandName.expected) || "";
+
+  const det = el("details", "rowcard");
+  const sum = el("summary");
+  sum.appendChild(statusPill(result.status));
+  sum.appendChild(el("span", "fname", result.file));
+  if (brand) sum.appendChild(el("span", "brand", brand));
+  sum.appendChild(el("span", "lat", ((result.latencyMs || 0) / 1000).toFixed(1) + " s"));
+  det.appendChild(sum);
+  const details = el("div", "details");
+  details.appendChild(renderResult(result));
+  det.appendChild(details);
+  $("batch-rows").appendChild(det);
+}
+
+function finishBatch() {
+  show($("batch-progress"), false);
+  const counts = { pass: 0, flag: 0, error: 0 };
+  const results = [];
+  state.batchResults.forEach(function (r) {
+    counts[r.status] = (counts[r.status] || 0) + 1;
+    results.push(r);
+  });
+  const secs = ((Date.now() - state.batchStartMs) / 1000).toFixed(0);
+
+  const banner = $("batch-banner");
+  clear(banner);
+  show(banner, true);
+  banner.appendChild(el("strong", null, "Batch complete: " + results.length + " label(s) checked in " + secs + " s total"));
+  const c = el("div", "counts");
+  c.appendChild(el("span", "pill pass", "Pass: " + (counts.pass || 0)));
+  c.appendChild(el("span", "pill flag", "Flag: " + (counts.flag || 0)));
+  c.appendChild(el("span", "pill error", "Error: " + (counts.error || 0)));
+  banner.appendChild(c);
+
+  const dl = el("button", "btn primary", "Download results CSV");
+  dl.type = "button";
+  dl.addEventListener("click", function () { downloadResultsCsv(results); });
+  banner.appendChild(dl);
+
+  state.batchRunning = false;
+  $("batch-start").disabled = state.batchFiles.length === 0;
+}
+
+function downloadResultsCsv(results) {
+  const lines = ["file,status,brand,notes,latency_ms"];
+  results.forEach(function (r) {
+    const rec = state.csv.get(r.file);
+    const brand = (rec && rec.brandName) ||
+      (r.fields && r.fields.brandName && r.fields.brandName.expected) || "";
+    const notes = Array.isArray(r.summary) ? r.summary.join("; ") : "";
+    lines.push([r.file, r.status, brand, notes, r.latencyMs || 0].map(csvEscape).join(","));
+  });
+  const blob = new Blob([lines.join("\r\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "label-results.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function batchError(err) {
+  state.batchRunning = false;
+  $("batch-start").disabled = false;
+  const retry = function () {
+    show($("batch-error"), false);
+    runBatch(state.chunkIndex);
+  };
+  const label = err.kind === "token" ? "I've ticked the box — retry" : "Try again";
+  showAlert($("batch-error"), errorFor(err.kind, err.text) +
+    " Files already checked are shown below; retrying continues from where it stopped.",
+    retry, label);
+}
+
+async function runBatch(chunkIndex) {
+  state.batchRunning = true;
+  $("batch-start").disabled = true;
+  if (chunkIndex === 0) {
+    clear($("batch-rows"));
+    show($("batch-banner"), false);
+    state.batchResults = [];
+    state.batchDone = 0;
+    state.batchStartMs = Date.now();
+  }
+
+  const total = state.batchFiles.length;
+  try {
+    for (let ci = chunkIndex; ci < state.batchChunks.length; ci++) {
+      state.chunkIndex = ci;
+      setProgress(state.batchDone, total, "Processing " + state.batchDone + " / " + total + "…");
+      const chunk = state.batchChunks[ci];
+      const items = await Promise.all(chunk.map(async function (file) {
+        return { file: file.name, image: await fileToDataUrl(file), app: appForFile(file) };
+      }));
+      const results = await verifyRequest(items);
+      results.forEach(function (r) {
+        state.batchResults.push(r);
+        appendBatchRow(r);
+      });
+      state.batchDone += chunk.length;
+    }
+    finishBatch();
+  } catch (err) {
+    batchError(err);
+  }
+}
+
+function startBatch() {
+  if (state.batchRunning || !state.batchFiles.length) return;
+  show($("batch-error"), false);
+  state.batchChunks = [];
+  for (let i = 0; i < state.batchFiles.length; i += MAX_ITEMS) {
+    state.batchChunks.push(state.batchFiles.slice(i, i + MAX_ITEMS));
+  }
+  runBatch(0);
+}
+
+// ── wire up ──────────────────────────────────────────────────────────────────
+$("single-file").addEventListener("change", onSingleFile);
+$("single-clear").addEventListener("click", clearSingle);
+$("single-check").addEventListener("click", checkSingle);
+
+$("batch-files").addEventListener("change", onBatchFiles);
+$("batch-csv").addEventListener("change", onBatchCsv);
+$("csv-clear").addEventListener("click", function () {
+  state.csv = new Map();
+  $("batch-csv").value = "";
+  show($("csv-clear"), false);
+  renderBatchPrep();
+});
+$("batch-start").addEventListener("click", startBatch);
+
+waitForWidget();

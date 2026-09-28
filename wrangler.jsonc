@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "treasury-labelcheck",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "ai": { "binding": "AI" },
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+  // Non-secret Turnstile config. Template placeholders injected at deploy by
+  // jq (workers.dev host unknown pre-deploy); update to real hostname after.
+  "vars": {
+    "TURNSTILE_HOSTNAMES": "localhost,127.0.0.1,__WORKER_HOST__"
+  }
+}

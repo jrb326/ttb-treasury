@@ -25,18 +25,26 @@ body {
   color: var(--ibm-gray-30, #e0e0e0);
 }
 
-/* ── Page / card layout ────────────────────────────────────────────────────── */
-.page { max-width: 64rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
+/* ── Page / SIEM split shell: application left ⅓, evidence viewer right ⅔ ─── */
+.page { max-width: 120rem; margin: 0 auto; padding: 1rem 1rem 2rem; }
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(20rem, 1fr) 2fr;   /* exactly 1 : 2 */
+  gap: 1rem;
+  align-items: start;
+}
+.pane--app { min-width: 0; }
+.pane--viewer { position: sticky; top: 1rem; }      /* evidence stays visible while the queue scrolls */
 
 .card {
   background: #fff;
   border: 1px solid var(--ibm-gray-20, #e0e0e0);
-  padding: 2rem;
-  margin-top: 1rem;              /* only aligns cards under the black header */
+  padding: 1.25rem;
 }
+.pane--app > .card { margin-top: 1rem; }
+.pane--app > .card:first-child { margin-top: 0; }
 .card h2 { margin: 0 0 1rem; font-size: 1.25rem; font-weight: 600; }
-
-main .card:first-child { margin-top: 1.5rem; }
 
 #robot-check { min-height: 65px; margin: .75rem 0; }  /* reserved space, no layout jump */
 
@@ -76,14 +84,66 @@ input[type="file"] { font: 400 .875rem 'IBM Plex Sans', sans-serif; color: var(-
 /* Carbon ghost buttons open photo pickers already; these sit beside hints. */
 #single-clear, #csv-clear { margin-top: .75rem; }
 
-#single-preview {
-  display: block;
-  max-width: 280px;
-  max-height: 360px;
-  margin: 0 0 1.5rem;
-  border: 1px solid var(--ibm-gray-20, #e0e0e0);
+/* ── Right-pane evidence viewer ───────────────────────────────────────────── */
+.viewer {
+  display: flex;
+  flex-direction: column;
   background: #fff;
+  border: 1px solid var(--ibm-gray-20, #e0e0e0);
+  height: calc(100vh - 7.25rem);   /* full working height, header + margins */
+  min-height: 24rem;
 }
+.viewer__toolbar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem .75rem;
+  background: var(--ibm-gray-10, #f4f4f4);
+  border-bottom: 1px solid var(--ibm-gray-20, #e0e0e0);
+}
+.viewer__zoom {
+  min-width: 3.25rem;
+  text-align: center;
+  font: 600 .8125rem 'IBM Plex Sans', sans-serif;
+  color: var(--ibm-gray-70, #525252);
+  font-variant-numeric: tabular-nums;
+}
+.viewer__spacer { flex: 1; }
+.viewer__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 1rem;
+  background:
+    repeating-conic-gradient(#ececec 0 25%, #f7f7f7 0 50%) 0 0 / 24px 24px;  /* neutral checker, stands in for transparency */
+}
+#viewer-img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--ibm-gray-30, #e0e0e0);
+}
+#viewer-img.img--fit { width: auto !important; }
+.viewer__empty { text-align: center; color: var(--ibm-gray-60, #6f6f6f); padding: 1rem; }
+.viewer__empty-title { margin: 0 0 .25rem; font-size: 1.0625rem; font-weight: 600; color: var(--ibm-gray-80, #393939); }
+.viewer__empty-hint { margin: 0; font-size: .875rem; }
+.viewer__meta {
+  display: flex;
+  gap: 1.25rem;
+  padding: .5rem .75rem;
+  border-top: 1px solid var(--ibm-gray-20, #e0e0e0);
+  font: 400 .8125rem 'IBM Plex Sans', sans-serif;
+  color: var(--ibm-gray-70, #525252);
+  font-variant-numeric: tabular-nums;
+}
+.viewer__meta span:first-child { font-weight: 600; color: var(--ibm-gray-90, #161616); word-break: break-all; }
 
 /* ── Status / progress (spinner is app-specific; bar itself is Carbon) ─────── */
 .status {
@@ -233,4 +293,11 @@ footer p { max-width: 42rem; margin: 0; font-weight: 600; }
 @media (max-width: 600px) {
   .card { padding: 1rem; }
   .actions .bx--btn { width: 100%; min-width: 0; }
+}
+
+/* Below ~1024px the split stops paying: stack queue above viewer (Wazuh does the same). */
+@media (max-width: 1024px) {
+  .shell { grid-template-columns: 1fr; }
+  .pane--viewer { position: static; }
+  .viewer { height: min(75vh, 36rem); }
 }

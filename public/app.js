@@ -34,6 +34,57 @@ const CSV_COLUMNS = {
   country_of_origin: "countryOfOrigin",
 };
 
+// ── right-pane viewer (SIEM split: evidence at right) ───────────────────────
+const viewer = { url: null, own: false, fit: true, scale: 1, rotate: 0 };
+const ZOOM_STEPS = [1, 1.25, 1.5, 2, 3, 4];
+
+function viewerPaint() {
+  const img = $("viewer-img");
+  img.classList.toggle("img--fit", viewer.fit);
+  img.style.width = viewer.fit ? "" : (viewer.scale * 100) + "%";
+  img.style.transform = "rotate(" + viewer.rotate + "deg)";
+  $("viewer-zoom").textContent = viewer.fit ? "Fit" : Math.round(viewer.scale * 100) + "%";
+}
+
+function showInViewer(url, label, own) {
+  if (viewer.own && viewer.url && viewer.url !== url) URL.revokeObjectURL(viewer.url);
+  viewer.url = url;
+  viewer.own = !!own;
+  viewer.fit = true;
+  viewer.scale = 1;
+  viewer.rotate = 0;
+  const img = $("viewer-img");
+  img.onload = null;
+  img.src = url;
+  show(img, true);
+  show($("viewer-empty"), false);
+  const meta = $("viewer-meta");
+  clear(meta);
+  const dims = el("span", null, "measuring…");
+  img.onload = function () { dims.textContent = img.naturalWidth + " × " + img.naturalHeight + " px"; };
+  meta.appendChild(el("span", null, label));
+  meta.appendChild(dims);
+  show(meta, true);
+  viewerPaint();
+}
+
+function clearViewer(url) {
+  if (viewer.url !== url) return;
+  if (viewer.own) URL.revokeObjectURL(viewer.url);
+  viewer.url = null;
+  viewer.own = false;
+  const img = $("viewer-img");
+  img.removeAttribute("src");
+  show(img, false);
+  show($("viewer-meta"), false);
+  show($("viewer-empty"), true);
+}
+
+function viewBatchFile(name) {
+  const file = state.batchFiles.find(function (f) { return f.name === name; });
+  if (file) showInViewer(URL.createObjectURL(file), file.name, true);
+}
+
 // ── state ────────────────────────────────────────────────────────────────────
 const state = {
   singleFile: null,          // File
@@ -310,11 +361,10 @@ function onSingleFile(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
   state.singleFile = file;
+  if (viewer.url === state.singlePreviewUrl) clearViewer(state.singlePreviewUrl);
   if (state.singlePreviewUrl) URL.revokeObjectURL(state.singlePreviewUrl);
   state.singlePreviewUrl = URL.createObjectURL(file);
-  const img = $("single-preview");
-  img.src = state.singlePreviewUrl;
-  show(img, true);
+  showInViewer(state.singlePreviewUrl, file.name, false);
   show($("single-clear"), true);
   show($("single-prefill"), false);
 
@@ -338,8 +388,7 @@ function onSingleFile(e) {
 function clearSingle() {
   state.singleFile = null;
   $("single-file").value = "";
-  if (state.singlePreviewUrl) { URL.revokeObjectURL(state.singlePreviewUrl); state.singlePreviewUrl = null; }
-  show($("single-preview"), false);
+  if (state.singlePreviewUrl) { clearViewer(state.singlePreviewUrl); URL.revokeObjectURL(state.singlePreviewUrl); state.singlePreviewUrl = null; }
   show($("single-clear"), false);
   show($("single-prefill"), false);
   $("single-check").disabled = true;
@@ -508,6 +557,7 @@ function appendBatchRow(result) {
   sum.appendChild(el("span", "fname", result.file));
   if (brand) sum.appendChild(el("span", "brand", brand));
   sum.appendChild(el("span", "lat", ((result.latencyMs || 0) / 1000).toFixed(1) + " s"));
+  sum.addEventListener("toggle", function () { if (det.open) viewBatchFile(result.file); });
   det.appendChild(sum);
   const details = el("div", "details");
   details.appendChild(renderResult(result));
@@ -635,5 +685,41 @@ $("csv-clear").addEventListener("click", function () {
   renderBatchPrep();
 });
 $("batch-start").addEventListener("click", startBatch);
+
+// ── viewer controls ──────────────────────────────────────────────────────────
+function stepZoom(dir) {
+  if (!viewer.url || viewer.fit) {
+    viewer.fit = false;
+    viewer.scale = dir > 0 ? 1.5 : 1;
+  } else {
+    const i = ZOOM_STEPS.findIndex(function (s) { return Math.abs(s - viewer.scale) < 0.01; });
+    const next = Math.min(Math.max(i + dir, 0), ZOOM_STEPS.length - 1);
+    viewer.scale = ZOOM_STEPS[next];
+    if (viewer.scale === 1) viewer.fit = true;
+  }
+  viewerPaint();
+}
+$("viewer-zoom-in").addEventListener("click", function () { stepZoom(1); });
+$("viewer-zoom-out").addEventListener("click", function () { stepZoom(-1); });
+$("viewer-fit").addEventListener("click", function () { viewer.fit = true; viewer.scale = 1; viewerPaint(); });
+$("viewer-rotate").addEventListener("click", function () { viewer.rotate = (viewer.rotate + 90) % 360; viewerPaint(); });
+$("viewer-full").addEventListener("click", function () { if (viewer.url && viewer.own !== null) window.open(viewer.url, "_blank", "noopener"); });
+
+// Paste an image anywhere → single flow (SIEM analyst muscle memory).
+document.addEventListener("paste", function (e) {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf("image/") !== 0) continue;
+    const file = items[i].getAsFile();
+    if (!file) continue;
+    e.preventDefault();
+    const input = $("single-file");
+    const dt = new DataTransfer();
+    dt.items.add(new File([file], file.name || "pasted-image.png", { type: file.type }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+});
 
 waitForWidget();

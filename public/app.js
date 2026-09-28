@@ -2,9 +2,7 @@
 "use strict";
 
 // ── constants ────────────────────────────────────────────────────────────────
-const TURNSTILE_SITEKEY = "0x4AAAAAAFHT209vgWKKWBl2"; // real sitekey
-// Hosts the widget is registered for. Production host: add it here + redeploy.
-const TURNSTILE_HOSTS = ["localhost", "127.0.0.1"];
+const TURNSTILE_SITEKEY = "0x4AAAAAAFHT209vgWKKWBl2"; // widget: treasury-labelcheck-verify
 const MAX_ITEMS = 10;          // server limit per request
 const MIN_TOKEN_LEN = 55;      // shorter tokens are test placeholders → treat as absent
 
@@ -62,9 +60,15 @@ function clear(node) { while (node.firstChild) node.removeChild(node.firstChild)
 function show(node, on) { node.hidden = !on; }
 
 // ── Turnstile lifecycle ──────────────────────────────────────────────────────
+// The API is ready only when window.turnstile.render is a function — an element
+// with id="turnstile" (or a stub) would otherwise shadow the script's global.
+function turnstileReady() {
+  return typeof window.turnstile !== "undefined" && typeof window.turnstile.render === "function";
+}
+
 function renderWidget() {
-  if (state.widgetId !== null || !window.turnstile) return;
-  state.widgetId = turnstile.render("#turnstile", {
+  if (state.widgetId !== null || !turnstileReady()) return;
+  state.widgetId = window.turnstile.render("#robot-check", {
     sitekey: TURNSTILE_SITEKEY,
     action: "verify",
     callback: function () {
@@ -75,11 +79,11 @@ function renderWidget() {
 }
 
 function waitForWidget() {
-  if (window.turnstile) { renderWidget(); return; }
+  if (turnstileReady()) { renderWidget(); return; }
   let waited = 0;
   const t = setInterval(function () {
     waited += 400;
-    if (window.turnstile) { clearInterval(t); renderWidget(); }
+    if (turnstileReady()) { clearInterval(t); renderWidget(); }
     else if (waited >= 10000) {
       clearInterval(t);
       $("turnstile-status").textContent =
@@ -90,13 +94,13 @@ function waitForWidget() {
 
 function resetTurnstile() {
   // Token is single-use: reset after every attempt, success or failure.
-  if (window.turnstile && state.widgetId !== null) turnstile.reset(state.widgetId);
+  if (turnstileReady() && state.widgetId !== null) window.turnstile.reset(state.widgetId);
   $("turnstile-status").textContent = "Tick the robot box again before the next check.";
 }
 
 function getToken() {
-  if (!window.turnstile || state.widgetId === null) return null;
-  const t = turnstile.getResponse(state.widgetId);
+  if (!turnstileReady() || state.widgetId === null) return null;
+  const t = window.turnstile.getResponse(state.widgetId);
   if (!t || t.length < MIN_TOKEN_LEN) return null; // placeholder / expired → absent
   return t;
 }
@@ -158,7 +162,13 @@ function showAlert(container, message, onRetry, retryLabel) {
 
 // ── result rendering (shared by single card and batch rows) ─────────────────
 function statusPill(status) {
-  const s = el("span", "pill " + (status || "not_checked"), PILL_LABEL[status] || status || "—");
+  // Carbon tag presets: neutral gray (pass / not checked), support-tinted when
+  // attention is needed, support-red for errors. Carbon has no green tag — a
+  // passive "pass" intentionally stays neutral rather than inventing colors.
+  const role = status === "error" ? "red" : "gray";
+  const warn = status === "flag" || status === "missing" ? " pill-warn" : "";
+  const s = el("span", "bx--tag bx--tag--" + role + " pill" + warn, PILL_LABEL[status] || status || "—");
+  s.dataset.status = status || "not_checked";
   return s;
 }
 
@@ -438,7 +448,7 @@ function renderBatchPrep() {
   if (csvLoaded) {
     const imagesNoRow = names.filter(function (n) { return !state.csv.has(n); });
     if (imagesNoRow.length) {
-      const card = el("div", "warn-card");
+      const card = el("div", "warn-card bx--toast-notification bx--toast-notification--warning");
       card.appendChild(el("h3", null, "No application data for " + imagesNoRow.length + " photo(s)"));
       card.appendChild(el("p", null,
         "These photos have no matching CSV row. They will still be checked — warnings (spelling, missing required text) still apply — but there is nothing to compare against:"));
@@ -452,7 +462,7 @@ function renderBatchPrep() {
       if (names.indexOf(file) === -1) rowsNoImage.push(file);
     });
     if (rowsNoImage.length) {
-      const card = el("div", "warn-card");
+      const card = el("div", "warn-card bx--toast-notification bx--toast-notification--warning");
       card.appendChild(el("h3", null, rowsNoImage.length + " CSV row(s) match no chosen photo"));
       card.appendChild(el("p", null,
         "These won't be sent. Check the filenames match the photos exactly (including extension):"));
@@ -482,6 +492,7 @@ function appForFile(file) {
 function setProgress(done, total, prefix) {
   show($("batch-progress"), true);
   $("batch-bar-fill").style.width = (total ? Math.round((done / total) * 100) : 0) + "%";
+  probeProgress();
   $("batch-progress-text").textContent =
     (prefix || ("Processing " + done + " / " + total + "…"));
 }
@@ -560,6 +571,11 @@ function batchError(err) {
   showAlert($("batch-error"), errorFor(err.kind, err.text) +
     " Files already checked are shown below; retrying continues from where it stopped.",
     retry, label);
+}
+
+/** Match Carbon's section title; React updates aria-valuenow, our static bar probes at 100. */
+function probeProgress() {
+  $("batch-progress").querySelector(".bx--progress-bar")?.setAttribute("aria-valuenow", "100");
 }
 
 async function runBatch(chunkIndex) {

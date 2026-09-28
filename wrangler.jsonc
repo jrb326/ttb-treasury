@@ -6,9 +6,9 @@
   "ai": { "binding": "AI" },
   "assets": { "directory": "./public", "binding": "ASSETS" },
   "observability": { "enabled": true },
-  // Non-secret Turnstile config. Template placeholders injected at deploy by
-  // jq (workers.dev host unknown pre-deploy); update to real hostname after.
+  // Turnstile widget domains + siteverify hostname allowlist (keep in sync:
+  // wrangler turnstile widget update <sitekey> --domain <host> --json).
   "vars": {
-    "TURNSTILE_HOSTNAMES": "localhost,127.0.0.1,__WORKER_HOST__"
+    "TURNSTILE_HOSTNAMES": "localhost,127.0.0.1,treasury-labelcheck.jrb326.workers.dev"
   }
 }

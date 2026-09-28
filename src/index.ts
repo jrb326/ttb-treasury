@@ -18,8 +18,9 @@ export interface Env {
   TURNSTILE_HOSTNAMES: string;
 }
 
-/** Chunk size the UI sends; also the server's hard cap per request. */
-export const MAX_ITEMS_PER_REQUEST = 10;
+/** Chunk size the UI sends; also the server's hard cap per request.
+ *  Deliberately not exported: Workers service entrypoints may only export handlers. */
+const MAX_ITEMS_PER_REQUEST = 10;
 /** Per-image decode cap: labels are photos, not raw scans. */
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 

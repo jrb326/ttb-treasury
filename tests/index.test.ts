@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import worker, { MAX_ITEMS_PER_REQUEST } from "../src/index";
+import worker from "../src/index";
 import { WARNING_BODY } from "../src/warning";
+
+/** Contract: clients chunk at 10 items/request and the server rejects >10. */
+const MAX_ITEMS_PER_REQUEST = 10;
 
 const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 

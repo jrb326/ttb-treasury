@@ -4,112 +4,121 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TTB Label Checker</title>
+<!-- IBM Carbon compiled theme, vendored: the environment blocks CDN egress (FedRAMP constraint from IT). -->
+<link rel="stylesheet" href="vendor/carbon-components.min.css">
 <link rel="stylesheet" href="styles.css">
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
 
-<header class="masthead">
-  <h1>TTB Label Checker</h1>
-  <p>Compare a label photo against the application on file — one label or a whole batch.</p>
+<header class="site-header">
+  <p class="site-header__name">TTB Label Checker</p>
+  <p class="site-header__tagline">Compare a label photo against the application on file — one label or a whole batch.</p>
 </header>
 
-<section class="card robot-card" aria-label="Robot check">
-  <h2>Before you start: robot check</h2>
-  <p>Tick the box below. After every check the box resets — tick it again before the next one.</p>
-  <div id="turnstile"></div>
-  <p class="hint" id="turnstile-status">Loading the robot check…</p>
-</section>
+<div class="page">
 
-<main>
-
-  <section class="card" aria-labelledby="single-heading">
-    <h2 id="single-heading">Single label check</h2>
-
-    <div class="field">
-      <label for="single-file">1. Choose the label photo</label>
-      <input type="file" id="single-file" accept="image/*">
-      <p class="hint">A clear photo of the whole front label works best.</p>
-      <button type="button" class="btn link" id="single-clear" hidden>Remove photo</button>
-    </div>
-
-    <img id="single-preview" alt="Preview of the label photo you chose" hidden>
-
-    <fieldset>
-      <legend>2. Application details</legend>
-      <p class="hint" id="single-prefill" hidden>Prefilled from your CSV (filename match). Fix anything that looks wrong.</p>
-      <div class="field">
-        <label for="s-brand">Brand name <span class="req">*required</span></label>
-        <input type="text" id="s-brand" autocomplete="off" placeholder="As filed in the application">
-      </div>
-      <div class="field">
-        <label for="s-class">Class / type</label>
-        <input type="text" id="s-class" autocomplete="off" placeholder="e.g. Straight Bourbon Whiskey">
-      </div>
-      <div class="field">
-        <label for="s-abv">Alcohol content</label>
-        <input type="text" id="s-abv" autocomplete="off" placeholder="e.g. 45% ABV">
-      </div>
-      <div class="field">
-        <label for="s-net">Net contents</label>
-        <input type="text" id="s-net" autocomplete="off" placeholder="e.g. 750 mL">
-      </div>
-      <div class="field">
-        <label for="s-country">Country of origin <span class="hint-inline">(optional)</span></label>
-        <input type="text" id="s-country" autocomplete="off" placeholder="e.g. USA">
-      </div>
-    </fieldset>
-
-    <div class="actions">
-      <button type="button" class="btn primary" id="single-check" disabled>Check label</button>
-    </div>
-
-    <div class="status" id="single-status" hidden aria-live="polite">
-      <span class="spinner" aria-hidden="true"></span>
-      <span id="single-timer-text">Checking…</span>
-    </div>
-
-    <div id="single-error" class="alert" role="alert" hidden></div>
-    <div id="single-result"></div>
+  <section class="card" aria-label="Robot check">
+    <h2>Before you start: robot check</h2>
+    <p>Tick the box below. After every check the box resets — tick it again before the next one.</p>
+    <div id="robot-check"></div>
+    <p class="hint" id="turnstile-status">Loading the robot check…</p>
   </section>
 
-  <section class="card" aria-labelledby="batch-heading">
-    <h2 id="batch-heading">Batch check</h2>
+  <main>
 
-    <div class="field">
-      <label for="batch-files">1. Choose all the label photos</label>
-      <input type="file" id="batch-files" accept="image/*" multiple>
-      <p class="hint">Hold Ctrl (or Command on a Mac) to pick many files at once.</p>
-    </div>
+    <section class="card" aria-labelledby="single-heading">
+      <h2 id="single-heading">Single label check</h2>
 
-    <div class="field">
-      <label for="batch-csv">2. Optional: upload the application list (CSV)</label>
-      <input type="file" id="batch-csv" accept=".csv,text/csv">
-      <p class="hint">See <a href="samples.csv">samples.csv</a> for the format. Rows are matched to photos by exact filename.</p>
-      <button type="button" class="btn link" id="csv-clear" hidden>Remove CSV</button>
-    </div>
+      <div class="field">
+        <label class="bx--label" for="single-file">1. Choose the label photo</label>
+        <input type="file" id="single-file" accept="image/*">
+        <p class="bx--form__helper-text">A clear photo of the whole front label works best.</p>
+        <button type="button" class="bx--btn bx--btn--ghost bx--btn--sm" id="single-clear" hidden>Remove photo</button>
+      </div>
 
-    <div id="batch-mismatch" aria-live="polite"></div>
+      <img id="single-preview" alt="Preview of the label photo you chose" hidden>
 
-    <div class="actions">
-      <button type="button" class="btn primary" id="batch-start" disabled>Start batch check</button>
-    </div>
+      <fieldset>
+        <legend>2. Application details</legend>
+        <p class="bx--form__helper-text" id="single-prefill" hidden>Prefilled from your CSV (filename match). Fix anything that looks wrong.</p>
+        <div class="field">
+          <label class="bx--label" for="s-brand">Brand name <span class="req">*required</span></label>
+          <input class="bx--text-input" type="text" id="s-brand" autocomplete="off" placeholder="As filed in the application">
+        </div>
+        <div class="field">
+          <label class="bx--label" for="s-class">Class / type</label>
+          <input class="bx--text-input" type="text" id="s-class" autocomplete="off" placeholder="e.g. Straight Bourbon Whiskey">
+        </div>
+        <div class="field">
+          <label class="bx--label" for="s-abv">Alcohol content</label>
+          <input class="bx--text-input" type="text" id="s-abv" autocomplete="off" placeholder="e.g. 45% ABV">
+        </div>
+        <div class="field">
+          <label class="bx--label" for="s-net">Net contents</label>
+          <input class="bx--text-input" type="text" id="s-net" autocomplete="off" placeholder="e.g. 750 mL">
+        </div>
+        <div class="field">
+          <label class="bx--label" for="s-country">Country of origin <span class="hint-inline">(optional)</span></label>
+          <input class="bx--text-input" type="text" id="s-country" autocomplete="off" placeholder="e.g. USA">
+        </div>
+      </fieldset>
 
-    <div class="status" id="batch-progress" hidden aria-live="polite">
-      <div class="bar"><div class="bar-fill" id="batch-bar-fill"></div></div>
-      <span id="batch-progress-text">Preparing…</span>
-    </div>
+      <div class="actions">
+        <button type="button" class="bx--btn bx--btn--primary bx--btn--field" id="single-check" disabled>Check label</button>
+      </div>
 
-    <div id="batch-error" class="alert" role="alert" hidden></div>
-    <div id="batch-banner" class="banner" hidden></div>
-    <div id="batch-rows"></div>
-  </section>
+      <div class="status" id="single-status" hidden aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="single-timer-text">Checking…</span>
+      </div>
 
-</main>
+      <div id="single-error" class="bx--inline-notification bx--inline-notification--error" role="alert" hidden></div>
+      <div id="single-result"></div>
+    </section>
 
-<footer>
-  <p>This tool flags differences for review. A trained agent makes the final call.</p>
-</footer>
+    <section class="card" aria-labelledby="batch-heading">
+      <h2 id="batch-heading">Batch check</h2>
+
+      <div class="field">
+        <label class="bx--label" for="batch-files">1. Choose all the label photos</label>
+        <input type="file" id="batch-files" accept="image/*" multiple>
+        <p class="bx--form__helper-text">Hold Ctrl (or Command on a Mac) to pick many files at once.</p>
+      </div>
+
+      <div class="field">
+        <label class="bx--label" for="batch-csv">2. Optional: upload the application list (CSV)</label>
+        <input type="file" id="batch-csv" accept=".csv,text/csv">
+        <p class="bx--form__helper-text">See <a href="samples.csv">samples.csv</a> for the format. Rows are matched to photos by exact filename.</p>
+        <button type="button" class="bx--btn bx--btn--ghost bx--btn--sm" id="csv-clear" hidden>Remove CSV</button>
+      </div>
+
+      <div id="batch-mismatch" aria-live="polite"></div>
+
+      <div class="actions">
+        <button type="button" class="bx--btn bx--btn--primary bx--btn--field" id="batch-start" disabled>Start batch check</button>
+      </div>
+
+      <div id="batch-progress" hidden aria-live="polite">
+        <div class="bx--progress-bar bx--progress-bar--visible" role="progressbar"
+             aria-label="Batch progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+          <div class="bx--progress-bar__track"><div class="bx--progress-bar__bar" id="batch-bar-fill"></div></div>
+          <p class="bx--progress-bar__status" id="batch-progress-text">Preparing…</p>
+        </div>
+      </div>
+
+      <div id="batch-error" class="bx--inline-notification bx--inline-notification--error" role="alert" hidden></div>
+      <div id="batch-banner" class="banner" hidden></div>
+      <div id="batch-rows"></div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>This tool flags differences for review. A trained agent makes the final call.</p>
+  </footer>
+
+</div>
 
 <script src="app.js"></script>
 </body>

@@ -46,11 +46,32 @@ async function waitForToken(page, label, timeoutMs = 45000) {
 
 const results = { single: null, batch: null, latencies: [] };
 
+// Local test credentials (Cloudflare's documented always-pass test keys) let the
+// full flow run on machines where the managed challenge is refused. Production
+// keeps the real sitekey/secret — set only when explicitly asked to.
+const TEST_CREDS = process.env.E2E_TEST_CREDENTIALS === "1";
+const TEST_SITEKEY = "1x000000000000000000000AA";
+const REAL_SITEKEY = "0x4AAAAAAFHT209vgWKKWBl2";
+
 try {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   const page = await browser.newPage();
   page.setDefaultTimeout(60000);
-  console.log(`→ ${BASE}`);
+  if (TEST_CREDS) {
+    await page.setRequestInterception(true);
+    page.on("request", async (req) => {
+      if (req.url().endsWith("/app.js")) {
+        const text = await (await fetch(req.url())).text();
+        return req.respond({
+          status: 200,
+          contentType: "application/javascript",
+          body: text.replace(REAL_SITEKEY, TEST_SITEKEY),
+        });
+      }
+      return req.continue();
+    });
+  }
+  console.log(`→ ${BASE}${TEST_CREDS ? " (test credentials)" : ""}`);
 
   await page.goto(BASE, { waitUntil: "networkidle2" });
   expect(await page.title() === "TTB Label Checker", "page title");

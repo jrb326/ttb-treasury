@@ -140,7 +140,10 @@ input[type="file"] { font: 400 .875rem 'IBM Plex Sans', sans-serif; color: var(-
 .latency.slow { color: #613d00; background: #fcf4d6; border-color: #f1c21b; }
 .latency-note { color: #613d00; font-weight: 600; margin-left: .5rem; font-size: .8125rem; }
 
-/* Carbon has no verdict-color tag preset: support-warning tint (flag/missing). */
+/* Carbon has no verdict-color tag preset: support-warning tint (flag/missing).
+   Corners flat per the IBM grid — Carbon's own tag ships rounded (.9375rem); the
+   spinner circle below is a status glyph, not a box, so it stays round. */
+.bx--tag { border-radius: 0; }
 .pill {
   margin-right: .5rem;
   background: transparent;

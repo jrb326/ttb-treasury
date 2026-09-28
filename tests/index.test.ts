@@ -24,15 +24,20 @@ const MODEL_EXTRACTION = {
   },
 };
 
-function makeEnv(aiRun = vi.fn(async () => ({ answer: JSON.stringify(MODEL_EXTRACTION) }))) {
+function makeEnv() {
+  const chat = {
+    complete: vi.fn(async () => JSON.stringify(MODEL_EXTRACTION)),
+  };
   const assetsFetch = vi.fn(async () => new Response("asset"));
   const env = {
-    AI: { run: aiRun },
+    CF_ACCOUNT_ID: "acct",
+    AGENT_AI_TOKEN: "tok",
+    CHAT: chat as unknown as { complete: (c: unknown, o?: unknown) => Promise<string> },
     ASSETS: { fetch: assetsFetch },
     TURNSTILE_SECRET: "test",
     TURNSTILE_HOSTNAMES: "localhost",
   };
-  return { env, aiRun, assetsFetch };
+  return { env, chat, assetsFetch };
 }
 
 /** Stub global fetch used by siteverify; returns the given verdict JSON. */
@@ -65,10 +70,10 @@ afterEach(() => {
 
 describe("static assets", () => {
   it("forwards non-/api GETs to ASSETS without touching AI", async () => {
-    const { env, aiRun, assetsFetch } = makeEnv();
+    const { env, chat, assetsFetch } = makeEnv();
     const res = await worker.fetch(new Request("http://localhost/index.html"), env);
     expect(assetsFetch).toHaveBeenCalledTimes(1);
-    expect(aiRun).not.toHaveBeenCalled();
+    expect(chat.complete).not.toHaveBeenCalled();
     expect(await res.text()).toBe("asset");
   });
 });
@@ -86,7 +91,7 @@ describe("method handling", () => {
 describe("turnstile gate", () => {
   it("rejects when siteverify says success=false: 403, AI never called", async () => {
     const siteverify = stubSiteverify({ success: false });
-    const { env, aiRun } = makeEnv();
+    const { env, chat } = makeEnv();
     const res = await worker.fetch(
       verifyRequest({
         items: [{ file: "a.png", image: "data:image/png;base64,AAAA", app: matchingApp }],
@@ -98,12 +103,12 @@ describe("turnstile gate", () => {
     expect(siteverify).toHaveBeenCalledWith(SITEVERIFY_URL, expect.anything());
     const body = (await res.json()) as { error: string; reason: string };
     expect(body.error).toBe("BOT_CHECK_FAILED");
-    expect(aiRun).not.toHaveBeenCalled();
+    expect(chat.complete).not.toHaveBeenCalled();
   });
 
   it("rejects a missing token without even calling siteverify", async () => {
     const siteverify = stubSiteverify(VALID_SITEVERIFY);
-    const { env, aiRun } = makeEnv();
+    const { env, chat } = makeEnv();
     const res = await worker.fetch(
       verifyRequest({ items: [{ file: "a.png", image: "data:image/png;base64,AAAA" }] }),
       env,
@@ -111,12 +116,12 @@ describe("turnstile gate", () => {
     expect(res.status).toBe(403);
     expect(((await res.json()) as { reason: string }).reason).toMatch(/token/);
     expect(siteverify).not.toHaveBeenCalled();
-    expect(aiRun).not.toHaveBeenCalled();
+    expect(chat.complete).not.toHaveBeenCalled();
   });
 
   it("rejects a hostname outside TURNSTILE_HOSTNAMES", async () => {
     stubSiteverify({ success: true, action: "verify", hostname: "evil.example" });
-    const { env, aiRun } = makeEnv();
+    const { env, chat } = makeEnv();
     const res = await worker.fetch(
       verifyRequest({
         items: [{ file: "a.png", image: "data:image/png;base64,AAAA" }],
@@ -126,14 +131,14 @@ describe("turnstile gate", () => {
     );
     expect(res.status).toBe(403);
     expect(((await res.json()) as { reason: string }).reason).toMatch(/hostname/);
-    expect(aiRun).not.toHaveBeenCalled();
+    expect(chat.complete).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /api/verify happy path", () => {
   it("returns pass when the label matches the application", async () => {
     stubSiteverify(VALID_SITEVERIFY);
-    const { env, aiRun } = makeEnv();
+    const { env, chat } = makeEnv();
     const res = await worker.fetch(
       verifyRequest({
         items: [{ file: "oldtom.png", image: "data:image/png;base64,AAAA", app: matchingApp }],
@@ -147,7 +152,7 @@ describe("POST /api/verify happy path", () => {
     expect(results).toHaveLength(1);
     expect(results[0].file).toBe("oldtom.png");
     expect(results[0].status).toBe("pass");
-    expect(aiRun).toHaveBeenCalledTimes(1);
+    expect(chat.complete).toHaveBeenCalledTimes(1);
   });
 
   it("returns flag when the application ABV disagrees with the label", async () => {
@@ -192,7 +197,7 @@ describe("POST /api/verify happy path", () => {
 describe("request validation", () => {
   it("rejects more than MAX_ITEMS_PER_REQUEST items", async () => {
     stubSiteverify(VALID_SITEVERIFY);
-    const { env, aiRun } = makeEnv();
+    const { env, chat } = makeEnv();
     const items = Array.from({ length: MAX_ITEMS_PER_REQUEST + 1 }, (_, i) => ({
       file: `i${i}.png`,
       image: "data:image/png;base64,AAAA",
@@ -200,7 +205,7 @@ describe("request validation", () => {
     const res = await worker.fetch(verifyRequest({ items, turnstile: { token: "tok" } }), env);
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: string }).error).toMatch(/too many items/);
-    expect(aiRun).not.toHaveBeenCalled();
+    expect(chat.complete).not.toHaveBeenCalled();
   });
 
   it("rejects a JSON body without items[]", async () => {

@@ -5,17 +5,22 @@
  * Workers AI — bots without a valid token can never consume free-tier AI quota.
  */
 
-import { extractWithBudget, type AiLike } from "./extract";
+import { restChatClient, type ChatClient } from "./completions";
+import { extractWithBudget } from "./extract";
 import { asNonEmptyString, asRecord } from "./codec";
 import { verifyTurnstileToken } from "./siteverify";
 import { errorResult, verifyLabel } from "./verify";
 import type { LabelApplication, VerificationResult } from "./types";
 
 export interface Env {
-  AI: AiLike;
+  /** Account id + Workers-AI-Edit API token (token set via `wrangler secret put AGENT_AI_TOKEN`). */
+  CF_ACCOUNT_ID: string;
+  AGENT_AI_TOKEN: string;
   ASSETS: { fetch(req: Request): Promise<Response> };
   TURNSTILE_SECRET: string;
   TURNSTILE_HOSTNAMES: string;
+  /** Tests inject a fake; production falls back to the REST chat client. */
+  CHAT?: ChatClient;
 }
 
 /** Chunk size the UI sends; also the server's hard cap per request.
@@ -86,7 +91,7 @@ function parseItem(raw: unknown, index: number): VerifyItem | null {
 }
 
 /** Verify a chunk of items sequentially (each item = one model call). */
-async function verifyItems(env: Env, items: VerifyItem[]): Promise<VerificationResult[]> {
+async function verifyItems(env: Env, chat: ChatClient, items: VerifyItem[]): Promise<VerificationResult[]> {
   const results: VerificationResult[] = [];
   for (const item of items) {
     const started = Date.now();
@@ -98,7 +103,7 @@ async function verifyItems(env: Env, items: VerifyItem[]): Promise<VerificationR
           continue;
         }
       }
-      const extraction = await extractWithBudget(env.AI, item.image);
+      const extraction = await extractWithBudget(chat, item.image);
       results.push(verifyLabel({ file: item.file, app: item.app, extraction, latencyMs: Date.now() - started }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -159,7 +164,7 @@ export default {
         if (!item) return json({ error: `items[${i}] missing file or image` }, 400);
         items.push(item);
       }
-      const results = await verifyItems(env, items);
+      const results = await verifyItems(env, env.CHAT ?? restChatClient(env), items);
       return json({ results });
     }
 

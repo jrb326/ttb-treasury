@@ -8,17 +8,18 @@ A take-home prototype for TTB alcohol-beverage label compliance review. Upload a
 npm install
 npx wrangler login
 npx wrangler secret put TURNSTILE_SECRET   # Turnstile secret key from the dashboard
-npm run dev                                # http://localhost:8750
+npx wrangler secret put AGENT_AI_TOKEN     # Cloudflare API token, Account → Workers AI → Edit
+npm run dev                                # http://localhost:8787
 npm run deploy
 ```
 
-Local dev needs the secret outside git — `wrangler dev` reads `.dev.vars`:
+`AGENT_AI_TOKEN` is an **API token** (dash → profile → API tokens → custom, `Account / Workers AI / Edit`), chosen so the Worker can call the OpenAI-compatible endpoint with a short-lived `fetch` instead of holding an account-scoped credential. Store it without ever printing it:
 
 ```bash
-echo 'TURNSTILE_SECRET=<your-secret-key>' > .dev.vars
+umask 077; read -rsp 'CF API token: ' t; echo; printf '%s' "$t" > ~/.cf-ai-token; unset t
 ```
 
-`TURNSTILE_HOSTNAMES` is a plain var (not a secret) set in `wrangler.jsonc`; the defaults cover `localhost` and `127.0.0.1`, so local dev works as-is. Override it in `.dev.vars` only if you're testing on another host. Before deploy, the var carries a `__WORKER_HOST__` placeholder — after the first deploy, replace it with the real `*.workers.dev` hostname (or pass it through your deploy script) or every production request 403s at the bot gate.
+For local dev the same two values live in `.dev.vars` (gitignored): `TURNSTILE_SECRET=…`, `AGENT_AI_TOKEN=…`. `TURNSTILE_HOSTNAMES` and `CF_ACCOUNT_ID` are plain vars in `wrangler.jsonc`; the allowlist already contains `localhost`, `127.0.0.1`, and `treasury-labelcheck.jrb326.workers.dev`. Add the final host before the first production check — the gate fails closed by design.
 
 Tests and types:
 
@@ -36,10 +37,16 @@ browser (public/, static assets)
 Turnstile siteverify          fail-closed gate; action must be "verify",
   │                           hostname must be in TURNSTILE_HOSTNAMES
   ▼
-Workers AI                    cf/moondream/moondream3.1-9B-A2B — one structured-JSON
-  │                           extraction per image (fields + readability + warning
-  │                           format cues); 8 s budget via Promise.race because the
-  │                           AI binding can't actually be aborted
+Workers AI REST     POST …/accounts/:id/ai/v1/chat/completions
+  │                 (OpenAI-compatible; model @cf/meta/llama-4-scout-17b-16e-instruct)
+  │                 One structured-JSON extraction per image (fields + readability +
+  │                 warning format cues). MEASURED 2.3–3.8 s per label, full parse on
+  │                 all five fixtures. Why REST and not the env.AI binding: every
+  │                 native image input — moondream ({} responses), prompt+images,
+  │                 content-blocks — silently dropped the image on this account;
+  │                 only the OpenAI-compatible route delivered pixels (verified by
+  │                 an answer only visible eyes could give: "Old Tom Distillery").
+  │                 9 s hard budget (fetch abort) + Promise.race backstop.
   ▼
 deterministic verification    normalize + classify each field:
   │                             text: exact / style-only / similar / mismatch
@@ -64,7 +71,7 @@ Reviewers don't check one bottle; they get import dumps of 200–300 images with
 
 ## UX decisions
 
-- **5-second rule (Sarah).** Every result shows a latency badge ("checked in 2.3 s"); anything over 5 s is visibly marked slow. The extraction budget is 8 s hard — over 5 s is tolerated but called out, never hidden.
+- **5-second rule (Sarah).** Every result shows a latency badge ("checked in 2.3 s"); anything over 5 s is visibly marked slow. The extraction budget is 9 s hard — over 5 s is tolerated but called out, never hidden. Measured on the fixture set: scout extraction 2.3–3.8 s, all five under 5 s.
 - **Batch mode** exists because the workload is 200–300-image import dumps, not single bottles. Single-image mode stays for quick spot checks.
 - **"My mother could figure out" (stakeholder).** Big controls, three steps: tick the robot box, drop files, click start. Plain-language error copy ("Tick the robot box again before the next check"), no jargon, no modal wizards.
 - **Style-only differences are PASS, not FLAG (Dave's Stone's Throw anecdote).** A label printing `STONE'S THROW` against an application saying `Stone's Throw` is the same words — casing and punctuation are normalized away. Only actual word differences flag.
@@ -85,11 +92,12 @@ Free-tier Workers AI quota is the only thing a crawler could burn here, so **eve
 Honest list, roughly by how much it would cost to fix:
 
 - **No COLA integration.** Application data is pasted or CSV-parsed, keyed by filename. A real system pulls the application by COLA ID; this prototype has no access to one.
-- **Moondream extraction accuracy varies** on glare, blur, heavy skew, or cropped labels. Mitigation is honest, not clever: the model self-reports `readable: false` plus image issues, and unreadable images are flagged for a human — there is no de-skew/OCR-fallback pipeline.
+- **Full Turnstile E2E could not be exercised in this build environment.** Three browser engines on this machine (Chromium, WebKit) refused the managed challenge itself — reproduced with Cloudflare's own minimal snippet and their always-pass test keys — so the client challenge never completes here. The server gate was verified differently: a bogus token hits real siteverify and gets 403. The widget domains, action check, and hostname allowlist are configured for localhost + the deployed host; run `node scripts/e2e.mjs <base-url>` from a normal browser environment for the full path.
+- **Vision model accuracy varies** on glare, blur, heavy skew, or cropped labels. Mitigation is honest, not clever: the model self-reports `readable: false` plus image issues, and unreadable images are flagged for a human — there is no de-skew/OCR-fallback pipeline.
 - **Warning boldness is judged by the model eyeballing the rendering.** `heading_bold` is a vision-model opinion, not font metadata. It's the weakest link in the warning check and a known false-positive/negative risk. A real system would want the artwork file, not a photo.
 - **Sequential batch throughput.** 10 images/request, one model call per image, chunks one after another. Parallel chunking is straightforward later; it wasn't worth the complexity for a prototype and it makes quota burn harder to reason about.
-- **Turnstile hostname allowlist must include the final deployed host.** The `__WORKER_HOST__` placeholder in `wrangler.jsonc` fails closed until replaced — deliberate, but it means a fresh deploy 403s by design.
-- **Tests are unit/route level with a mocked AI binding.** No live-model golden tests; extraction-quality regressions won't be caught by CI.
+- **Turnstile hostname allowlist must include the final deployed host.** `TURNSTILE_HOSTNAMES` fails closed — a fresh host 403s until both it and the widget's `--domain` list are updated, by design.
+- **Tests are unit/route level with an injected fake chat client.** No live-model golden tests; extraction-quality regressions won't be caught by CI. `scripts/e2e.mjs` covers live extraction when run with credentials.
 - **Fixtures are synthetic SVG-rendered labels, not photographs.** Clean type on flat cream backgrounds. Real submissions are phone photos of curved glass with glare.
 
 ## Sample labels
@@ -102,11 +110,13 @@ node scripts/make-labels.mjs     # writes public/*.png (needs sharp, already a d
 
 Ground truth per image lives in `scripts/expected-results.json` (expected verdict + flagged fields + the application record). To run the batch flow by hand: serve the deployed (or `wrangler dev`) site, switch to batch mode, select `public/oldtom-pass.png` … `public/harbor-warn-missing.png`, load `public/samples.csv`, start. Note `samples.csv` deliberately carries application rows that disagree with the printed labels, so the run produces a mix of PASS and FLAG rows; `expected-results.json` holds the matching-application ground truth.
 
+## Theme
+
+IBM Carbon: vendored compiled CSS (`public/vendor/carbon-components.min.css`, carbon-components@10.58.1) plus three IBM Plex Sans weights served locally from `public/vendor/fonts/`. Vendored, not CDN — Marcus's firewall blocks third-party egress. Form controls, buttons, tags, notifications and the progress bar are Carbon `bx--` patterns; app-specific pieces (verdict banner, result table, batch rows) sit in `styles.css` on Carbon tokens. Corners flat throughout (`border-radius: 0` on tags; the spinner circle is a status glyph, not a box).
+
 ## Deployed URL
 
-TODO(deploy): fill after deploy — `https://treasury-labelcheck.<account>.workers.dev`
-
-Then update `TURNSTILE_HOSTNAMES` in `wrangler.jsonc` (replace `__WORKER_HOST__`) and the `TURNSTILE_HOSTS` list in `public/app.js`, and redeploy.
+**https://treasury-labelcheck.jrb326.workers.dev** — Cloudflare Workers, single deploy, static assets + `/api/*` in one Worker.
 
 ## Repo structure
 
@@ -115,18 +125,21 @@ Then update `TURNSTILE_HOSTNAMES` in `wrangler.jsonc` (replace `__WORKER_HOST__`
 ├── src/
 │   ├── index.ts        worker entry: routing, request cap, Turnstile gate
 │   ├── siteverify.ts   Turnstile siteverify (fail-closed, action + hostname checks)
-│   ├── extract.ts      vision-model prompt, JSON coercion, 8 s budget
+│   ├── completions.ts  OpenAI-compatible chat client (model + 9 s abort)
+│   ├── extract.ts      extraction prompt, JSON coercion, retry + budget
 │   ├── verify.ts       field checks + verdict rollup
 │   ├── normalize.ts    normalization, text/ABV/volume matching, warning compare
 │   ├── warning.ts      canonical 27 CFR part 16 statement
 │   ├── codec.ts        runtime shape guards
 │   └── types.ts        shared types
 ├── public/             static UI (index.html, app.js, styles.css)
+│   ├── vendor/         vendored Carbon CSS + IBM Plex Sans woff2/woff
 │   ├── samples.csv     demo application data
 │   └── *.png           generated sample labels
 ├── scripts/
 │   ├── make-labels.mjs      fixture generator (SVG → PNG via sharp)
+│   ├── e2e.mjs              browser E2E: single + batch live flows (puppeteer)
 │   └── expected-results.json ground truth for the fixtures
-├── wrangler.jsonc      Worker config (AI binding, assets, Turnstile vars)
+├── wrangler.jsonc      Worker config (assets, Turnstile + account vars)
 └── .dev.vars           local secrets (gitignored)
 ```

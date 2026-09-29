@@ -10,6 +10,13 @@ import { extractWithBudget } from "./extract";
 import { asNonEmptyString, asRecord } from "./codec";
 import { verifyTurnstileToken } from "./siteverify";
 import { errorResult, verifyLabel } from "./verify";
+import {
+  DAILY_BUDGET,
+  RESERVE_PER_LABEL,
+  reserve,
+  settle,
+  type BudgetD1,
+} from "./budget";
 import type { LabelApplication, VerificationResult } from "./types";
 
 export interface Env {
@@ -19,6 +26,8 @@ export interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
   TURNSTILE_SECRET: string;
   TURNSTILE_HOSTNAMES: string;
+  /** D1 binding backing the daily neuron budget (rate limit); absent in unit tests. */
+  BUDGET?: BudgetD1;
   /** Tests inject a fake; production falls back to the REST chat client. */
   CHAT?: ChatClient;
 }
@@ -91,9 +100,17 @@ function parseItem(raw: unknown, index: number): VerifyItem | null {
   return { file, image, app };
 }
 
-/** Verify a chunk of items sequentially (each item = one model call). */
-async function verifyItems(env: Env, chat: ChatClient, items: VerifyItem[]): Promise<VerificationResult[]> {
+/** Verify a chunk of items sequentially (each item = one model call).
+ *  Returns measured neuron cost (0 when the client never reported usage) so
+ *  the caller can settle the daily budget — never invented, argmax-sourced. */
+async function verifyItems(
+  env: Env,
+  chat: ChatClient,
+  items: VerifyItem[],
+): Promise<{ results: VerificationResult[]; actualNeurons: number; succeeded: number }> {
   const results: VerificationResult[] = [];
+  let actualNeurons = 0;
+  let succeeded = 0;
   for (const item of items) {
     const started = Date.now();
     try {
@@ -105,6 +122,15 @@ async function verifyItems(env: Env, chat: ChatClient, items: VerifyItem[]): Pro
         }
       }
       const extraction = await extractWithBudget(chat, item.image);
+      // Client just completed a call → read its reported usage immediately
+      // (multi-item batches accumulate; the field is overwritten next item).
+      const u = chat.usage;
+      if (u && (u.prompt > 0 || u.completion > 0)) {
+        actualNeurons += Math.ceil(
+          (u.prompt * 24545 + u.completion * 77273) / 1_000_000, // scout pricelist rates
+        );
+      }
+      succeeded++;
       const verdict = verifyLabel({ file: item.file, app: item.app, extraction, latencyMs: Date.now() - started });
       results.push({ ...verdict, extraction });
     } catch (err) {
@@ -112,7 +138,7 @@ async function verifyItems(env: Env, chat: ChatClient, items: VerifyItem[]): Pro
       results.push({ ...errorResult(item.file, `verification failed: ${msg}`, Date.now() - started), extraction: null });
     }
   }
-  return results;
+  return { results, actualNeurons, succeeded };
 }
 
 /**
@@ -166,7 +192,41 @@ export default {
         if (!item) return json({ error: `items[${i}] missing file or image` }, 400);
         items.push(item);
       }
-      const results = await verifyItems(env, env.CHAT ?? restChatClient(env), items);
+
+      // Daily free-tier rate limit (Cloudflare Workers AI: 10,000 neurons/day,
+      // reset 00:00 UTC). Reserve BEFORE any model call — fails closed, no AI
+      // access at all once today's cap is spent. Settle after: charge real
+      // usage, refund the remainder of the reservation. No BUDGET binding
+      // (unit tests, wrangler without d1) → limit skipped, production only.
+      let reservation = items.length * RESERVE_PER_LABEL;
+      if (env.BUDGET) {
+        const r = await reserve(env.BUDGET, items.length);
+        if (!r.ok) {
+          return json({
+            error: "DAILY_BUDGET_EXHAUSTED",
+            reason:
+              `Today's AI budget is spent (${r.used} / ${DAILY_BUDGET} neurons). ` +
+              "Resets at 00:00 UTC — come back tomorrow, or ask the operator to raise the cap.",
+          }, 429);
+        }
+        reservation = r.reserved;
+      }
+
+      const chat = env.CHAT ?? restChatClient(env);
+      const { results, actualNeurons, succeeded } = await verifyItems(env, chat, items);
+
+      if (env.BUDGET && reservation > 0) {
+        // What was actually spent, max = reservation:
+        //  - injected test double → 0 (fake calls, no real neurons) → full refund
+        //  - real client with reported usage → measured cost from verifyItems
+        //  - zero usage after failures → keep full reservation (aborted calls
+        //    still consumed neurons server-side; never invent a lower number)
+        let charged = reservation;
+        if (env.CHAT) charged = 0;
+        else if (succeeded > 0 && actualNeurons > 0) charged = Math.min(actualNeurons, reservation);
+        await settle(env.BUDGET, charged, reservation);
+      }
+
       return json({ results });
     }
 

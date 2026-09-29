@@ -5,6 +5,10 @@
   "compatibility_date": "2026-09-01",
   "ai": { "binding": "AI" },
   "assets": { "directory": "./public", "binding": "ASSETS" },
+  // Daily neuron budget ledger (rate limit): reserves before, settles after.
+  "d1_databases": [
+    { "binding": "BUDGET", "database_name": "labelcheck-budget", "database_id": "538ad05c-a688-4ba8-97b6-35189f7485a9" }
+  ],
   "observability": { "enabled": true },
   // Turnstile widget domains + siteverify hostname allowlist (keep in sync:
   // wrangler turnstile widget update <sitekey> --domain <host> --json).

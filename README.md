@@ -9,6 +9,9 @@ npm install
 npx wrangler login                    # session for deploys (this is NOT the AI token)
 npx wrangler secret put TURNSTILE_SECRET   # Turnstile secret key from the dashboard
 npx wrangler secret put AGENT_AI_TOKEN     # Cloudflare API token, Account → Workers AI → Edit
+npx wrangler d1 create labelcheck-budget   # first time only; add binding per wrangler.jsonc
+npx wrangler d1 execute labelcheck-budget --remote --command \
+  "CREATE TABLE IF NOT EXISTS ai_budget (day TEXT PRIMARY KEY, neurons INTEGER NOT NULL DEFAULT 0);"
 npm run dev                                # http://localhost:8787
 npm run deploy                             # → https://treasury-labelcheck.jrb326.workers.dev
 ```
@@ -134,6 +137,17 @@ Known gaps are listed under *Trade-offs and limitations* (notably: typographic i
 6. Batch = sequential chunks of 10, client-side CSV parse, zero server storage (Marcus's "don't store anything sensitive").
 7. Sample labels are synthetic; the repo contains no third-party label artwork.
 8. Secrets never touch the repo: `AGENT_AI_TOKEN`/`TURNSTILE_SECRET` live in `.dev.vars` (gitignored) and `wrangler secret`; `.gitignore` also excludes `.env*`, `*.pem`, `*.key`, `*token*` and similar so a GitHub upload stays clean.
+
+## Daily AI-budget rate limit (free tier protection)
+
+Cloudflare gives **10,000 free neurons/day** per account (resets 00:00 UTC — [pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/)); scout costs **24,545 neurons/M input + 77,273/M output**. Measured on the fixtures: ~2.1–2.3k input + ~280 output ≈ **77 neurons/label**.
+
+The Worker keeps a two-phase ledger in **D1** (`src/budget.ts`, binding `BUDGET`):
+
+1. **Reserve** `120 neurons × labels` in one guarded `UPDATE … WHERE neurons + cost <= 8000 RETURNING` — atomic, and **fail-closed**: over budget → `429 DAILY_BUDGET_EXHAUSTED` *before* any model call (wrangler reports the free tier kills over-allocation at exactly 10,000, so the cap sits at **8,000 with 20% headroom** = **66 labels/day** at the reserve rate).
+2. **Settle** after the run: the chat client reports real `usage.prompt_tokens/completion_tokens` per call, `verifyItems` accumulates the exact cost at pricelist rates, and `settle()` refunds `reservation − actual`. Real-usage charges are never invented; total failures keep the whole reservation (aborted calls still spend tokens server-side). Fake/absent usage (tests) refunds fully.
+
+Tuning: `DAILY_BUDGET` / `RESERVE_PER_LABEL` in `src/budget.ts`; the ledger's today-row via `npx wrangler d1 execute labelcheck-budget --remote --command "SELECT * FROM ai_budget WHERE day = strftime('%Y-%m-%d','now');"`. Local `wrangler dev` has the same table locally (no-op if the binding is gone).
 
 ## Trade-offs and limitations
 

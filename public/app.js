@@ -9,6 +9,7 @@ const MIN_TOKEN_LEN = 55;      // shorter tokens are test placeholders → treat
 
 const MSG_UNREACHABLE = "Couldn't reach the checker. Your image wasn't lost — try again.";
 const MSG_TOKEN = "The robot check wasn't done (or has expired). Tick the box above, then try again.";
+const MSG_BUDGET = "Today's AI budget is spent (resets 00:00 UTC). Nothing was charged — come back tomorrow.";
 
 const FIELD_ORDER = [
   ["brandName", "Brand name"],
@@ -179,6 +180,11 @@ async function verifyRequest(items) {
   resetTurnstile();
 
   if (res.status === 403) throw { kind: "token" };
+  if (res.status === 429) {
+    let reason = "Today's AI budget is spent. Resets at 00:00 UTC.";
+    try { const b = await res.json(); if (b && b.reason) reason = String(b.reason); } catch (e) { /* keep default */ }
+    throw { kind: "budget", text: reason };
+  }
   if (res.status === 400) {
     let text = "";
     try {
@@ -198,6 +204,7 @@ async function verifyRequest(items) {
 function errorFor(kind, text) {
   if (kind === "token") return MSG_TOKEN;
   if (kind === "unreachable") return MSG_UNREACHABLE;
+  if (kind === "budget") return text || MSG_BUDGET;
   return text || "Something went wrong. Please try again.";
 }
 
@@ -430,6 +437,26 @@ const DEMO_APPS = {
     netContents: "473 mL",
     countryOfOrigin: "United States",
     bottler: "brewed by Inlet Bay Brewing, 3 Dock St, San Pedro, CA",
+  },
+  // Real labels (user-supplied photos with graphics behind text) — records
+  // taken from the live extraction runs logged this session.
+  "demo-wheatbeer.png": {
+    brandName: "Example Brewing Co.",
+    classType: "Wheat Beer",
+    alcoholContent: "4% ALC./VOL.",
+    netContents: "1 PINT",
+    bottler: "Example Brewing Co., Baltimore, MD",
+  },
+  "demo-stout-keg.png": {
+    brandName: "EXAMPLE BREWING CO.",
+    classType: "India Pale Ale",
+    netContents: "15.5 GAL 5.16 GAL",
+    bottler: "Packed by Example Brewing Co. Arlington, VA",
+  },
+  "demo-milos-ale.png": {
+    brandName: "Milo's Ale",
+    alcoholContent: "5% ALC/VOL",
+    bottler: "EXAMPLE BREWING COMPANY, ARLINGTON, VA.",
   },
 };
 

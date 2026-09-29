@@ -16,6 +16,12 @@ export type ChatContent = TextPart | ImagePart;
 /** Minimal surface the extractor needs; tests fake this without touching HTTP. */
 export interface ChatClient {
   complete(content: ChatContent[], opts?: { maxTokens?: number }): Promise<string>;
+  /**
+   * Token usage of the most recent successful call, for neuron settlement.
+   * null before any call / when the model never answered (error paths):
+   * the budget then charges the full reservation — never invents usage.
+   */
+  usage?: { prompt: number; completion: number } | null;
 }
 
 export interface RestChatEnv {
@@ -30,7 +36,8 @@ export interface RestChatEnv {
 const COMPLETIONS_TIMEOUT_MS = 9000;
 
 export function restChatClient(env: RestChatEnv): ChatClient {
-  return {
+  const client: ChatClient = {
+    usage: null,
     async complete(content, opts) {
       const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1/chat/completions`;
       const controller = new AbortController();
@@ -53,13 +60,19 @@ export function restChatClient(env: RestChatEnv): ChatClient {
         if (!r.ok) throw new Error(`completions HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
         const data = (await r.json()) as {
           choices?: Array<{ message?: { content?: unknown } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
         };
         const text = data.choices?.[0]?.message?.content;
         if (typeof text !== "string" || text.length === 0) throw new Error("empty completion");
+        client.usage = {
+          prompt: data.usage?.prompt_tokens ?? 0,
+          completion: data.usage?.completion_tokens ?? 0,
+        };
         return text;
       } finally {
         clearTimeout(timer);
       }
     },
   };
+  return client;
 }

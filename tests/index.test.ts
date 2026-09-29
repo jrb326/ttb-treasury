@@ -7,7 +7,7 @@ const MAX_ITEMS_PER_REQUEST = 10;
 
 const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-/** Extraction the mocked Workers AI model returns for every image. */
+/** Fixed extraction the mock siteverify + mocked chat path returns for every image. */
 const MODEL_EXTRACTION = {
   readability: { readable: true, issues: [] },
   brand_name: "OLD TOM DISTILLERY",

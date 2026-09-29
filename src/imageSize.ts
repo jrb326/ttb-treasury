@@ -5,8 +5,8 @@
  * Why: the reserve booking in src/budget.ts must scale with image size.
  * A 4032x3024 phone photo tokenizes an order of magnitude above an 800x1100
  * fixture; a flat per-label reserve would under-book against Cloudflare's
- * hard 10k-neuron account stop. Dimensions from the header are exact and
- * cost three length checks.
+ * hard 10k-neuron account stop. Dimensions are exact from the header bytes —
+ * slicing a small base64 window and reading fixed-offset fields, no decoder.
  */
 
 export interface Dimensions {

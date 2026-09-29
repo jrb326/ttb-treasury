@@ -17,8 +17,8 @@
  *
  * Cost model per label is size-aware: parse the image header (src/imageSize.ts)
  * and convert dimensions → conservative input-token estimate at scout rates.
- * Phoned-in 12MP photos then book ~760 neurons instead of a flat 120 that
- * would under-reserve 6×.
+ * Phoned-in 12MP photos then book ~760 neurons instead of the flat 120 that
+ * (now kept only as the unparseable-header fallback) would under-reserve 6×.
  */
 
 import { parseImageDimensions } from "./imageSize";

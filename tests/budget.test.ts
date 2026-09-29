@@ -107,12 +107,11 @@ describe("daily neuron budget (Workers AI free-tier rate limit)", () => {
 
 describe("size-aware reserve", () => {
   it("fixture dimensions → conservative reserve at scout rates (≈2.5k in + 80 out)", () => {
-    // 800x1100 fixture: (800*1100/400 + 300) = 2,500 in tokens → 61.4 neurons;
-    // +80 out → ~7; floor 120 not hit → value in [61..120] band… assert exact formula
+    // 800x1100 fixture: (800*1100/400 + 300) = 2,500 in → 62 neurons; +80 out
+    // → 7 ⇒ 69, below RESERVE_PER_LABEL — the 120 floor binds (measured ~2.1–2.3k
+    // prompt tokens sit at the 1,600 floor too). Assert the floor holds.
     const r = estimateLabelReserve(800, 1100);
-    expect(r).toBeGreaterThan(100);
-    expect(r).toBeLessThan(200);
-    expect(r).toBeGreaterThanOrEqual(RESERVE_PER_LABEL - 60);
+    expect(r).toBe(RESERVE_PER_LABEL);
   });
 
   it("12MP phone photo reserves ≈6× the fixture, not a flat 120", () => {
@@ -120,8 +119,9 @@ describe("size-aware reserve", () => {
     const fix = estimateLabelReserve(800, 1100);
     expect(big).toBeGreaterThan(500);
     expect(big).toBeGreaterThan(fix * 3);
-    // and a 10-image batch of such photos must still fit — not auto-429
-    expect(Math.min(big, DAILY_BUDGET)).toBeLessThan(DAILY_BUDGET);
+    // a full batch of such photos (~7.6k) still books under the 8,000/day cap —
+    // the *next* batch would 429s at the reserve step, which is correct.
+    expect(big * 10).toBeLessThan(DAILY_BUDGET);
   });
 
   it("unknown dimensions fall back to the flat reserve (never guess big)", () => {

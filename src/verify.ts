@@ -5,8 +5,11 @@
  * Verdict semantics — the tool flags, the agent decides:
  *   pass    (green): text matches, or style-only difference (same words, different
  *           casing/punctuation — Dave's "STONE'S THROW" vs "Stone's Throw").
- *   flag    (yellow): mismatch / warning formatting violation / unreadable image — needs human eyes.
+ *   flag    (yellow): mismatch / warning formatting violation — needs human eyes.
  *   error   (red): extraction failed (timeout, model failure) — no claim possible, don't consume the result.
+ * Model-reported bad readability (readable:false) does NOT flip the verdict: it
+ * prepends a warning summary line ("Image may be unreadable: …") and the fields
+ * still check as-is — see the unreadable test in tests/verify.test.ts.
  *
  * Every rule here is plain deterministic code. No AI decides a verdict.
  */
@@ -103,8 +106,10 @@ function checkNetContents(expected: string | null | undefined, onLabel: string):
 
 /**
  * Government warning: presence (16.21), exact body text, heading ALL-CAPS AND
- * bold (16.22(a)(2)), remainder NOT bold (16.22(a)(2)), minimum type size by
- * container volume (16.22(b)). Violation → flag; absent → missing.
+ * bold + remainder NOT bold (16.22(a)(2)), contrasting background
+ * (16.22(a)(1)), and the VLM's visual-smallness cue for minimum type size
+ * (16.22(b) — no numeric mm estimate; see the size_issue comment below).
+ * Violation → flag; absent → missing.
  */
 function checkWarning(ext: Extraction): FieldVerdict {
   const w = ext.government_warning;
@@ -163,7 +168,7 @@ function checkWarning(ext: Extraction): FieldVerdict {
   }
 }
 
-/** Overall verdict from field statuses: any flag/missing/flag → flag, all clear → pass. */
+/** Overall verdict from field statuses: any flag or missing → flag, all clear → pass. */
 function rollUp(statuses: FieldStatus[]): Verdict {
   if (statuses.some((s) => s === "flag" || s === "missing")) return "flag";
   return "pass";

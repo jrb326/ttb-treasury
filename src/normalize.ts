@@ -142,22 +142,51 @@ export function matchNetContents(expected: string, actual: string): TextMatch {
 }
 
 /**
- * Warning check against 27 CFR 16.21: (1) body text vs canonical statement,
- * (2) heading rendered ALL CAPS **and** bold per TTB formatting rules.
+ * Warning checks against 27 CFR 16.22: (1) body text vs canonical statement
+ * (16.21/16.23), (2) heading rendered ALL CAPS **and** bold, (3) the remainder
+ * of the statement must NOT be bold — 16.22(a)(2).
  */
 export function compareWarning(
   labelText: string,
   headingAsPrinted: string,
   headingBold: boolean,
+  bodyBold = false,
 ): { textMatch: TextMatch; headingPass: boolean; headingNotice: string | null } {
   const textMatch = matchText(WARNING_BODY, labelText);
   const headingOk =
     headingAsPrinted.trim().toUpperCase().replace(/\s+/g, " ") === "GOVERNMENT WARNING:";
-  const headingPass = headingOk && headingBold;
+  const headingPass = headingOk && headingBold && !bodyBold;
   const headingNotice = !headingOk
     ? `Heading printed as “${headingAsPrinted}” — must be ALL CAPS “GOVERNMENT WARNING:”.`
     : !headingBold
       ? "“GOVERNMENT WARNING” must be in bold type (TTB formatting rule)."
-      : null;
+      : bodyBold
+        ? "Text after the heading must NOT be bold — only “GOVERNMENT WARNING” may be bold (27 CFR 16.22(a)(2))."
+        : null;
   return { textMatch, headingPass, headingNotice };
+}
+
+/**
+ * Minimum warning type size in millimetres — 27 CFR 16.22(b):
+ * containers ≤237 mL → 1 mm; >237 mL to 3 L → 2 mm; larger → 3 mm.
+ * `netMl` null (net contents unreadable) → null (not checkable).
+ */
+export function requiredTypeSizeMm(netMl: number | null): number | null {
+  if (netMl === null || !isFinite(netMl) || netMl <= 0) return null;
+  if (netMl <= 237) return 1;
+  if (netMl <= 3000) return 2;
+  return 3;
+}
+
+/**
+ * Compare estimated warning x-height to the CFR minimum.
+ * 15% slack absorbs vision-model estimation error (noisy pixel→mm scaling);
+ * flag only when clearly below. null measurement → "unknown" (no claim).
+ */
+export function compareTypeSize(
+  measuredMm: number | null,
+  requiredMm: number | null,
+): "pass" | "fail" | "unknown" {
+  if (measuredMm === null || requiredMm === null) return "unknown";
+  return measuredMm >= requiredMm * 0.85 ? "pass" : "fail";
 }

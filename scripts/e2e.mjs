@@ -17,6 +17,7 @@ const BATCH = [
   "stonesthrow-style.png",
   "aurora-warn-titlecase.png",
   "harbor-warn-missing.png",
+  "inlet-batch-cases.png",
 ];
 
 const failures = [];
@@ -150,7 +151,7 @@ try {
   );
   console.log("  row pills: " + JSON.stringify(pillCounts));
   expect((pillCounts.pass || 0) === 2, "2 passing rows (oldtom, stonesthrow)");
-  expect((pillCounts.flag || 0) === 3, "3 flagged rows (abv, heading, missing warning)");
+  expect((pillCounts.flag || 0) === 4, "4 flagged rows (abv, heading, missing warning, tiny warning)");
   expect((pillCounts.error || 0) === 0, "0 error rows");
 
   // Row detail verdicts (ground truth per field)

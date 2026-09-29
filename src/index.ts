@@ -85,6 +85,7 @@ function parseItem(raw: unknown, index: number): VerifyItem | null {
         alcoholContent: asNonEmptyString(appRaw.alcoholContent) ?? "",
         netContents: asNonEmptyString(appRaw.netContents) ?? "",
         countryOfOrigin: asNonEmptyString(appRaw.countryOfOrigin) ?? undefined,
+        bottler: asNonEmptyString(appRaw.bottler) ?? undefined,
       }
     : null;
   return { file, image, app };

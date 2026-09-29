@@ -1,4 +1,4 @@
-// Generates the 5 test label fixtures (800x1100 PNG) into public/.
+// Generates the 6 test label fixtures (800x1100 PNG) into public/.
 // Run: node scripts/make-labels.mjs   (requires sharp)
 //
 // Labels are built as SVG strings (cream bg, serif, centered blocks) and
@@ -85,13 +85,16 @@ function labelSvg(spec) {
   if (spec.bottler) parts.push(line(spec.bottler, 640, { size: 24, extra: 'font-style="italic"' }));
 
   // Government warning block, bottom
-  if (spec.warning && spec.warning !== "none") {
+  // warning is a "+"-separated mode list: correct | titlecase | tiny | none.
+  const modes = String(spec.warning || "").split("+");
+  if (spec.warning && !modes.includes("none")) {
     const boxY = 830;
     const boxH = 220;
     parts.push(
       `<rect x="60" y="${boxY}" width="${W - 120}" height="${boxH}" fill="#ffffff" stroke="#111" stroke-width="2"/>`
     );
-    const titlecase = spec.warning === "titlecase";
+    const titlecase = modes.includes("titlecase");
+    const tiny = modes.includes("tiny");
     const headingY = boxY + 36;
     if (titlecase) {
       // Deliberate formatting violation: title-case, NOT bold.
@@ -101,12 +104,15 @@ function labelSvg(spec) {
     } else {
       parts.push(line(WARNING_HEADING, headingY, { size: 18, weight: "700" }));
     }
-    const bodyLines = wrap(WARNING_BODY, 70);
+    // tiny: deliberate 27 CFR 16.22(b) violation — body set at 8 px, which
+    // rasterises to ≈1.3 mm x-height on a 90 mm-wide label (requirement is 2 mm).
+    const bodySize = tiny ? 8 : 18;
+    const bodyLines = wrap(WARNING_BODY, tiny ? 160 : 70);
     bodyLines.forEach((l, i) => {
-      parts.push(line(l, headingY + 30 + i * 26, { size: 18 }));
+      parts.push(line(l, headingY + 30 + i * (tiny ? 12 : 26), { size: bodySize }));
     });
   }
-  // warning: "none" → leave the bottom space empty on purpose.
+  // warning containing "none" → leave the bottom space empty on purpose.
 
   parts.push(`</g></svg>`);
   return parts.join("\n");
@@ -161,6 +167,17 @@ const LABELS = [
     net: "355 mL",
     bottler: "brewed by Harbor Light Brewing, 21 Pier Ln, Portsmouth, NH",
     warning: "none",
+  },
+  {
+    // Warning body rendered at 8 px ≈ 1.3 mm x-height — under the 2 mm
+    // minimum for a 473 mL container (27 CFR 16.22(b)) → warning flag.
+    file: "inlet-batch-cases.png",
+    brand: "INLET BAY",
+    klass: "New England IPA",
+    abv: "6.8% Alc./Vol.",
+    net: "473 mL",
+    bottler: "brewed by Inlet Bay Brewing, 3 Dock St, San Pedro, CA",
+    warning: "correct+tiny",
   },
 ];
 

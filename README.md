@@ -1,6 +1,6 @@
 # LabelCheck
 
-A take-home prototype for TTB alcohol-beverage label compliance review. Upload a label photo (or a batch of them) plus the COLA application data, and LabelCheck reads the label with a vision model, then runs deterministic comparisons against what the application claims: brand name, class/type, alcohol content, net contents, country of origin, and the 27 CFR part 16 government warning. It does not decide compliance — it flags differences between the printed label and the filed application, and the reviewer (the agent, in the real workflow) makes the call. Every verdict carries the field-by-field evidence behind it.
+A take-home prototype for TTB alcohol-beverage label compliance review. Upload a label photo (or a batch of them) plus the COLA application data, and LabelCheck reads the label with a vision model, then runs deterministic comparisons against what the application claims: brand name, class/type, alcohol content, net contents, bottler/producer, country of origin, and the 27 CFR part 16 government warning (text, heading format, and minimum type size). It does not decide compliance — it flags differences between the printed label and the filed application, and the reviewer (the agent, in the real workflow) makes the call. Every verdict carries the field-by-field evidence behind it.
 
 ## Quick start
 
@@ -75,7 +75,7 @@ Reviewers don't check one bottle; they get import dumps of 200–300 images with
 - **Batch mode** exists because the workload is 200–300-image import dumps, not single bottles. Single-image mode stays for quick spot checks.
 - **"My mother could figure out" (stakeholder).** Big controls, three steps: tick the robot box, drop files, click start. Plain-language error copy ("Tick the robot box again before the next check"), no jargon, no modal wizards.
 - **Style-only differences are PASS, not FLAG (Dave's Stone's Throw anecdote).** A label printing `STONE'S THROW` against an application saying `Stone's Throw` is the same words — casing and punctuation are normalized away. Only actual word differences flag.
-- **The warning is held to exactness (Jenny).** The government warning body is compared to the canonical 27 CFR 16.21 statement, and the heading must be rendered ALL CAPS **and** bold per TTB formatting rules. Title-case heading → flag. Missing warning → flag.
+- **The warning is held to exactness (Jenny).** The government warning body is compared to the canonical 27 CFR 16.21 statement, and the heading must be rendered ALL CAPS **and** bold per TTB formatting rules. Title-case heading → flag. Missing warning → flag. On top of that the check follows 27 CFR 16.22: text after the heading must *not* be bold, and the warning must meet the minimum type size for the container (1 mm ≤237 mL, 2 mm ≤3 L, 3 mm above) — an estimated x-height below the threshold flags. The type-size estimate is vision-model judgement with 15% slack, so only clearly-too-small type flags.
 
 ## Bot protection
 
@@ -87,6 +87,27 @@ Free-tier Workers AI quota is the only thing a crawler could burn here, so **eve
 - Fail-closed: siteverify network error or non-2xx → 403, never "assume human."
 - Tokens are single-use; the widget resets after every attempt, success or failure, so the UI always demands a fresh tick.
 
+## Requirements audit — original instructions → code
+
+Tracked against `treasurytakehome-rgb/instructions` README (the take-home brief). The brief itself does not quote the warning's font rules directly; it says to review ttb.gov for label requirements, so the concrete typography rules come from the regulation it points at — **27 CFR 16.22**: heading "GOVERNMENT WARNING" in capitals and bold, remainder not bold, and minimum type size (1 mm ≤237 mL / 2 mm ≤3 L / 3 mm above), readily legible on a contrasting background.
+
+| Requirement | Where |
+|---|---|
+| ~5 s per label or agents won't use it (Sarah) | measured 2.3–3.8 s/fixture; latency badge on every result; 9 s hard abort |
+| Batch upload of 200–300 labels (Sarah/Janet) | file picker + optional CSV, chunks of 10 sent sequentially, resume from failed chunk |
+| "My mother could figure it out" UX | three-step flat form, plain-language errors, no wizards |
+| Style-only diff = PASS (Dave, "STONE'S THROW") | `matchText` → `style_only`; fixture `stonesthrow-style.png` must pass |
+| Warning verbatim, heading ALL CAPS + bold (Jenny) | `compareWarning` + `aurora-warn-titlecase.png` (flag) + `harbor-warn-missing.png` (flag) |
+| Warning legibility: type size, not-bold body, contrast (27 CFR 16.22 via ttb.gov) | `checkWarning` → `requiredTypeSizeMm`/`compareTypeSize`; `body_bold` flag; contrasting-background design is model-visible only, not checked — fixture `inlet-batch-cases.png` (flag) |
+| Bottler/producer name+address mandatory (27 CFR 5.63(b)) | "Bottler / producer" form field + `bottler` CSV column, absence → flag when the application provides it |
+| Brand, class/type, ABV, net contents, country of origin | deterministic checks incl. ±0.5% ABV tolerance and mL/L conversion |
+| Vendor firewall (Marcus) | Carbon CSS + Plex fonts served from `public/vendor/`, zero external assets except the Turnstile script |
+| Nothing crazy / no storage (Marcus) | no KV/D1/R2, no image persistence, stateless verify-and-forget |
+| Bot protection before AI spend | Turnstile siteverify gate in front of `/api/verify` (design rationale in *Bot protection*) |
+| 5 verdicts in sample-label matrix; extra fixtures encouraged | 6 synthetic fixtures + `scripts/expected-results.json` ground truth |
+
+Known gaps are listed under *Trade-offs and limitations* (notably: typographic instructions cannot be read out of a photo except by model judgement, and original artwork files would be required for exact font metadata).
+
 ## Trade-offs and limitations
 
 Honest list, roughly by how much it would cost to fix:
@@ -94,7 +115,7 @@ Honest list, roughly by how much it would cost to fix:
 - **No COLA integration.** Application data is pasted or CSV-parsed, keyed by filename. A real system pulls the application by COLA ID; this prototype has no access to one.
 - **Full Turnstile E2E could not be exercised in this build environment.** Three browser engines on this machine (Chromium, WebKit) refused the managed challenge itself — reproduced with Cloudflare's own minimal snippet and their always-pass test keys — so the client challenge never completes here. The server gate was verified differently: a bogus token hits real siteverify and gets 403. The widget domains, action check, and hostname allowlist are configured for localhost + the deployed host; run `node scripts/e2e.mjs <base-url>` from a normal browser environment for the full path.
 - **Vision model accuracy varies** on glare, blur, heavy skew, or cropped labels. Mitigation is honest, not clever: the model self-reports `readable: false` plus image issues, and unreadable images are flagged for a human — there is no de-skew/OCR-fallback pipeline.
-- **Warning boldness is judged by the model eyeballing the rendering.** `heading_bold` is a vision-model opinion, not font metadata. It's the weakest link in the warning check and a known false-positive/negative risk. A real system would want the artwork file, not a photo.
+- **Warning boldness and type size are judged by the model eyeballing the rendering.** `heading_bold`, `body_bold`, and `type_size_mm` are vision-model opinions, not font metadata. The type-size estimate carries 15% slack so only clearly-too-small warning text flags — borderline cases will need human eyes. This is the weakest link in the warning check and a known false-positive/negative risk. A real system would want the artwork file (vector/PDF), not a photo, to measure fonts exactly.
 - **Sequential batch throughput.** 10 images/request, one model call per image, chunks one after another. Parallel chunking is straightforward later; it wasn't worth the complexity for a prototype and it makes quota burn harder to reason about.
 - **Turnstile hostname allowlist must include the final deployed host.** `TURNSTILE_HOSTNAMES` fails closed — a fresh host 403s until both it and the widget's `--domain` list are updated, by design.
 - **Tests are unit/route level with an injected fake chat client.** No live-model golden tests; extraction-quality regressions won't be caught by CI. `scripts/e2e.mjs` covers live extraction when run with credentials.
@@ -102,13 +123,13 @@ Honest list, roughly by how much it would cost to fix:
 
 ## Sample labels
 
-Five fixture labels exercise the verdict matrix: clean pass, ABV mismatch, style-only casing (must still pass), title-case warning heading, and missing warning.
+Six fixture labels exercise the verdict matrix: clean pass, ABV mismatch, style-only casing (must still pass), title-case warning heading, missing warning, and an under-sized warning (27 CFR 16.22(b)).
 
 ```bash
 node scripts/make-labels.mjs     # writes public/*.png (needs sharp, already a devDep)
 ```
 
-Ground truth per image lives in `scripts/expected-results.json` (expected verdict + flagged fields + the application record). To run the batch flow by hand: serve the deployed (or `wrangler dev`) site, switch to batch mode, select `public/oldtom-pass.png` … `public/harbor-warn-missing.png`, load `public/samples.csv`, start. Note `samples.csv` deliberately carries application rows that disagree with the printed labels, so the run produces a mix of PASS and FLAG rows; `expected-results.json` holds the matching-application ground truth.
+Ground truth per image lives in `scripts/expected-results.json` (expected verdict + flagged fields + the application record). The **Demo** card at the top of the app pre-loads any of these six samples — same records, no file to pick. To run the batch flow by hand: serve the deployed (or `wrangler dev`) site, switch to batch mode, select all six PNGs, load `public/samples.csv`, start. Note `samples.csv` deliberately carries application rows that disagree with the printed labels, so the run produces a mix of PASS and FLAG rows; `expected-results.json` holds the matching-application ground truth.
 
 ## Theme
 

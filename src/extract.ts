@@ -16,7 +16,7 @@ export const HARD_TIMEOUT_MS = 9000;
 
 export const EXTRACTION_PROMPT = `You are reading an alcohol beverage label for a TTB compliance reviewer. Extract exactly what is PRINTED. Never guess or invent. Use "" when a field is absent.
 
-JSON keys: readable (boolean; false if glare/blur/crop/skew makes text unreliable), issues (string[] of image problems, [] if none), brand_name, class_type, alcohol_content, net_contents, bottler, country_of_origin (strings), government_warning {present (boolean), text (string, body verbatim), heading_as_printed (e.g. "GOVERNMENT WARNING:" exactly as rendered), heading_bold (boolean)}.
+JSON keys: readable (boolean; false if glare/blur/crop/skew makes text unreliable), issues (string[] of image problems, [] if none), brand_name, class_type, alcohol_content, net_contents, bottler, country_of_origin (strings), government_warning {present (boolean), text (string, body verbatim), heading_as_printed (e.g. "GOVERNMENT WARNING:" exactly as rendered), heading_bold (boolean), body_bold (boolean; true if any text AFTER the "GOVERNMENT WARNING:" heading is bold/eye-catching), contrast_ok (boolean; false if the warning text and its background preclude easy reading), type_size_mm (number or null; approximate x-height in millimetres of the SMALL body text in the warning — estimate from character density and the label's real-world width of ~90 mm; use null if unreadable)}. TTB requires minimum warning type sizes under 27 CFR 16.22(b): 1 mm for containers ≤237 mL, 2 mm for ≤3 L, 3 mm larger, and a clearly contrasting background (16.22(a)(1)).
 
 Reply with ONLY the JSON object.`;
 
@@ -43,6 +43,15 @@ export function coerceExtraction(raw: unknown): Extraction {
       text: asNonEmptyString(warning.text) ?? "",
       heading_as_printed: asNonEmptyString(warning.heading_as_printed) ?? "",
       heading_bold: warning.heading_bold === true,
+      body_bold: warning.body_bold === true,
+      /** Contrasting background (27 CFR 16.22(a)(1)); absent signal → assume compliant. */
+      contrast_ok: warning.contrast_ok !== false,
+      type_size_mm:
+        typeof warning.type_size_mm === "number" &&
+        isFinite(warning.type_size_mm) &&
+        warning.type_size_mm > 0
+          ? warning.type_size_mm
+          : null,
     },
   };
 }

@@ -16,6 +16,9 @@ describe("coerceExtraction defaults", () => {
       text: "",
       heading_as_printed: "",
       heading_bold: false,
+      body_bold: false,
+      contrast_ok: true,
+      type_size_mm: null,
     });
   });
 

@@ -18,6 +18,9 @@ function ext(overrides: Partial<Extraction> = {}): Extraction {
       text: WARNING_BODY,
       heading_as_printed: "GOVERNMENT WARNING:",
       heading_bold: true,
+      body_bold: false,
+      contrast_ok: true,
+      type_size_mm: 2.5,
     },
     ...overrides,
   };
@@ -96,7 +99,7 @@ describe("verifyLabel not_checked fields", () => {
       file: "a.png",
       app: null,
       extraction: ext({
-        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false },
+        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, type_size_mm: null },
       }),
       latencyMs: 1,
     });
@@ -111,7 +114,7 @@ describe("verifyLabel warning field", () => {
       file: "a.png",
       app: matchingApp,
       extraction: ext({
-        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false },
+        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, type_size_mm: null },
       }),
       latencyMs: 1,
     });
@@ -130,6 +133,9 @@ describe("verifyLabel warning field", () => {
           text: WARNING_BODY,
           heading_as_printed: "GOVERNMENT WARNING:",
           heading_bold: false,
+          body_bold: false,
+          contrast_ok: true,
+          type_size_mm: 2.5,
         },
       }),
       latencyMs: 1,
@@ -149,12 +155,93 @@ describe("verifyLabel warning field", () => {
           text: "Drink responsibly and stay hydrated every day.",
           heading_as_printed: "GOVERNMENT WARNING:",
           heading_bold: true,
+          body_bold: false,
+          contrast_ok: true,
+          type_size_mm: 2.5,
         },
       }),
       latencyMs: 1,
     });
     expect(r.fields.warning.status).toBe("flag");
     expect(r.fields.warning.note).toContain("verbatim");
+  });
+
+  it("flags warning type below the 2 mm minimum for a 750 mL bottle (16.22(b))", () => {
+    const r = verifyLabel({
+      file: "a.png",
+      app: matchingApp,
+      extraction: ext({
+        government_warning: {
+          present: true,
+          text: WARNING_BODY,
+          heading_as_printed: "GOVERNMENT WARNING:",
+          heading_bold: true,
+          body_bold: false,
+          contrast_ok: true,
+          type_size_mm: 1.3,
+        },
+      }),
+      latencyMs: 1,
+    });
+    expect(r.status).toBe("flag");
+    expect(r.fields.warning.note).toContain("16.22(b)");
+    expect(r.fields.warning.note).toContain("2 mm");
+  });
+
+  it("passes type size when the model cannot estimate it (no claim)", () => {
+    const r = verifyLabel({
+      file: "a.png",
+      app: matchingApp,
+      extraction: ext({
+        government_warning: {
+          present: true,
+          text: WARNING_BODY,
+          heading_as_printed: "GOVERNMENT WARNING:",
+          heading_bold: true,
+          body_bold: false,
+          contrast_ok: true,
+          type_size_mm: null,
+        },
+      }),
+      latencyMs: 1,
+    });
+    expect(r.fields.warning.status).toBe("pass");
+  });
+
+  it("flags body text printed bold (16.22(a)(2))", () => {
+    const r = verifyLabel({
+      file: "a.png",
+      app: matchingApp,
+      extraction: ext({
+        government_warning: {
+          present: true,
+          text: WARNING_BODY,
+          heading_as_printed: "GOVERNMENT WARNING:",
+          heading_bold: true,
+          body_bold: true,
+          contrast_ok: true,
+          type_size_mm: 2.5,
+        },
+      }),
+      latencyMs: 1,
+    });
+    expect(r.status).toBe("flag");
+    expect(r.fields.warning.note).toContain("must NOT be bold");
+  });
+});
+
+describe("verifyLabel bottler (27 CFR 5.63(b))", () => {
+  it("only checked when application provides it", () => {
+    const without = verifyLabel({ file: "a.png", app: matchingApp, extraction: ext(), latencyMs: 1 });
+    expect(without.fields.bottler).toBeUndefined();
+
+    const app = { ...matchingApp, bottler: "Old Tom Distillery, Louisville KY" };
+    const match = verifyLabel({ file: "a.png", app, extraction: ext(), latencyMs: 1 });
+    expect(match.fields.bottler?.status).toBe("pass");
+
+    const missing = verifyLabel({ file: "a.png", app, extraction: ext({ bottler: "" }), latencyMs: 1 });
+    expect(missing.fields.bottler?.status).toBe("missing");
+    expect(missing.status).toBe("flag");
   });
 });
 

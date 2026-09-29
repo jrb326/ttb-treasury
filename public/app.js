@@ -14,6 +14,7 @@ const FIELD_ORDER = [
   ["classType", "Class / type"],
   ["alcoholContent", "Alcohol content"],
   ["netContents", "Net contents"],
+  ["bottler", "Bottler / producer"],
   ["countryOfOrigin", "Country of origin"],
 ];
 
@@ -32,6 +33,7 @@ const CSV_COLUMNS = {
   alcohol_content: "alcoholContent",
   net_contents: "netContents",
   country_of_origin: "countryOfOrigin",
+  bottler: "bottler",
 };
 
 // ── right-pane viewer (SIEM split: evidence at right) ───────────────────────
@@ -356,6 +358,92 @@ function csvEscape(v) {
   return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
 }
 
+// ── demo: pre-loaded TTB sample labels (see scripts/make-labels.mjs) ─────────
+const DEMO_APPS = {
+  "oldtom-pass.png": {
+    brandName: "Old Tom Distillery",
+    classType: "Kentucky Straight Bourbon Whiskey",
+    alcoholContent: "45% Alc./Vol. (90 Proof)",
+    netContents: "750 mL",
+    countryOfOrigin: "United States",
+    bottler: "bottled by Old Tom Distillery, 123 Main St, Louisville, KY",
+  },
+  "blackridge-abv-mismatch.png": {
+    brandName: "Black Ridge",
+    classType: "Kentucky Straight Bourbon Whiskey",
+    alcoholContent: "45% Alc./Vol. (90 Proof)",
+    netContents: "750 mL",
+    countryOfOrigin: "United States",
+    bottler: "bottled by Black Ridge Distillery, 456 Oak Ave, Bardstown, KY",
+  },
+  "stonesthrow-style.png": {
+    brandName: "Stone's Throw",
+    classType: "Straight Rye Whisky",
+    alcoholContent: "40% Alc./Vol. (80 Proof)",
+    netContents: "750 mL",
+    countryOfOrigin: "United States",
+    bottler: "bottled by Stone's Throw Distilling, 78 Creek Rd, Lawrenceburg, IN",
+  },
+  "aurora-warn-titlecase.png": {
+    brandName: "Aurora Reserve",
+    classType: "American Gin",
+    alcoholContent: "47% Alc./Vol.",
+    netContents: "750 mL",
+    countryOfOrigin: "United States",
+    bottler: "bottled by Aurora Reserve Spirits, 9 Harbor Way, Portland, OR",
+  },
+  "harbor-warn-missing.png": {
+    brandName: "Harbor Light",
+    classType: "Pale Ale",
+    alcoholContent: "5.2% Alc./Vol.",
+    netContents: "355 mL",
+    countryOfOrigin: "United States",
+    bottler: "brewed by Harbor Light Brewing, 21 Pier Ln, Portsmouth, NH",
+  },
+  "inlet-batch-cases.png": {
+    brandName: "Inlet Bay",
+    classType: "New England IPA",
+    alcoholContent: "6.8% Alc./Vol.",
+    netContents: "473 mL",
+    countryOfOrigin: "United States",
+    bottler: "brewed by Inlet Bay Brewing, 3 Dock St, San Pedro, CA",
+  },
+};
+
+async function onDemoPick(e) {
+  const name = e.target.value;
+  show($("demo-gone"), false);
+  if (!name) return;
+  let res;
+  try {
+    res = await fetch(encodeURIComponent(name));
+  } catch (err) {
+    res = null;
+  }
+  if (!res || !res.ok) {
+    showAlert($("demo-gone"), "Demo image " + name + " could not be loaded from the server.");
+    return;
+  }
+  const blob = await res.blob();
+  const file = new File([blob], name, { type: blob.type || "image/png" });
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  const input = $("single-file");
+  input.files = dt.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+
+  const app = DEMO_APPS[name];
+  if (app) {
+    $("s-brand").value = app.brandName || "";
+    $("s-class").value = app.classType || "";
+    $("s-abv").value = app.alcoholContent || "";
+    $("s-net").value = app.netContents || "";
+    $("s-country").value = app.countryOfOrigin || "";
+    $("s-bottler").value = app.bottler || "";
+    show($("single-prefill"), true);
+  }
+}
+
 // ── single flow ──────────────────────────────────────────────────────────────
 function onSingleFile(e) {
   const file = e.target.files && e.target.files[0];
@@ -376,6 +464,7 @@ function onSingleFile(e) {
     $("s-abv").value = rec.alcoholContent || "";
     $("s-net").value = rec.netContents || "";
     $("s-country").value = rec.countryOfOrigin || "";
+    $("s-bottler").value = rec.bottler || "";
     show($("single-prefill"), true);
   }
 
@@ -430,10 +519,12 @@ async function checkSingle() {
   const abv = $("s-abv").value.trim();
   const net = $("s-net").value.trim();
   const country = $("s-country").value.trim();
+  const bottler = $("s-bottler").value.trim();
   if (cls) app.classType = cls;
   if (abv) app.alcoholContent = abv;
   if (net) app.netContents = net;
   if (country) app.countryOfOrigin = country;
+  if (bottler) app.bottler = bottler;
 
   const btn = $("single-check");
   btn.disabled = true;
@@ -685,6 +776,7 @@ $("csv-clear").addEventListener("click", function () {
   renderBatchPrep();
 });
 $("batch-start").addEventListener("click", startBatch);
+$("demo-pick").addEventListener("change", onDemoPick);
 
 // ── viewer controls ──────────────────────────────────────────────────────────
 function stepZoom(dir) {

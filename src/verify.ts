@@ -12,10 +12,13 @@
  */
 
 import {
+  compareTypeSize,
   compareWarning,
   matchAbv,
   matchNetContents,
   matchText,
+  parseVolume,
+  requiredTypeSizeMm,
   type TextMatch,
 } from "./normalize";
 import type {
@@ -100,8 +103,9 @@ function checkNetContents(expected: string | null | undefined, onLabel: string):
 }
 
 /**
- * Government warning: presence + exact body text (27 CFR 16.21) + heading
- * ALL-CAPS and bold (TTB formatting rule). Any violation → flag; absent → missing.
+ * Government warning: presence (16.21), exact body text, heading ALL-CAPS AND
+ * bold (16.22(a)(2)), remainder NOT bold (16.22(a)(2)), minimum type size by
+ * container volume (16.22(b)). Violation → flag; absent → missing.
  */
 function checkWarning(ext: Extraction): FieldVerdict {
   const w = ext.government_warning;
@@ -118,12 +122,38 @@ function checkWarning(ext: Extraction): FieldVerdict {
     w.text,
     w.heading_as_printed,
     w.heading_bold,
+    w.body_bold,
   );
   const onLabel = w.text.trim() || null;
 
   if (!headingPass) {
     return { expected, onLabel, status: "flag", note: headingNotice ?? "warning heading formatting violation" };
   }
+
+  // Contrast — 27 CFR 16.22(a)(1): readily legible, contrasting background.
+  if (!w.contrast_ok) {
+    return {
+      expected,
+      onLabel,
+      status: "flag",
+      note: "warning text does not sit on a clearly contrasting background (27 CFR 16.22(a)(1)) — must be plainly legible",
+    };
+  }
+
+  // Type size — 27 CFR 16.22(b): 1 mm ≤237 mL, 2 mm ≤3 L, 3 mm above.
+  const requiredMm = requiredTypeSizeMm(parseVolume(ext.net_contents)?.ml ?? null);
+  const size = compareTypeSize(w.type_size_mm, requiredMm);
+  if (size === "fail") {
+    return {
+      expected,
+      onLabel,
+      status: "flag",
+      note:
+        `warning type size ≈ ${w.type_size_mm} mm — below the ${requiredMm} mm minimum ` +
+        "required for this container size (27 CFR 16.22(b)); must be plainly legible",
+    };
+  }
+
   switch (textMatch) {
     case "exact":
     case "style_only":
@@ -190,6 +220,9 @@ export function verifyLabel(args: VerifyLabelArgs): VerificationResult {
   };
   if (app?.countryOfOrigin?.trim()) {
     fields.countryOfOrigin = checkTextField("Country of origin", app.countryOfOrigin, extraction.country_of_origin);
+  }
+  if (app?.bottler?.trim()) {
+    fields.bottler = checkTextField("Bottler", app.bottler, extraction.bottler);
   }
 
   const statuses = Object.values(fields)

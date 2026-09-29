@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  compareTypeSize,
   compareWarning,
   matchAbv,
   matchNetContents,
@@ -7,6 +8,7 @@ import {
   normalize,
   parseAbv,
   parseVolume,
+  requiredTypeSizeMm,
   wordSetSimilarity,
 } from "../src/normalize";
 import { WARNING_BODY } from "../src/warning";
@@ -163,5 +165,49 @@ describe("compareWarning", () => {
     const r = compareWarning(WARNING_BODY, "GOVERNMENT WARNING:", false);
     expect(r.headingPass).toBe(false);
     expect(r.headingNotice).toContain("bold");
+  });
+
+  it("bold body text after the heading fails (27 CFR 16.22(a)(2))", () => {
+    const r = compareWarning(WARNING_BODY, "GOVERNMENT WARNING:", true, true);
+    expect(r.headingPass).toBe(false);
+    expect(r.headingNotice).toContain("must NOT be bold");
+  });
+});
+
+describe("requiredTypeSizeMm (27 CFR 16.22(b))", () => {
+  it("1 mm for containers up to 237 mL", () => {
+    expect(requiredTypeSizeMm(200)).toBe(1);
+    expect(requiredTypeSizeMm(237)).toBe(1);
+  });
+  it("2 mm up to 3 L", () => {
+    expect(requiredTypeSizeMm(355)).toBe(2);
+    expect(requiredTypeSizeMm(750)).toBe(2);
+    expect(requiredTypeSizeMm(3000)).toBe(2);
+  });
+  it("3 mm above 3 L", () => {
+    expect(requiredTypeSizeMm(3001)).toBe(3);
+    expect(requiredTypeSizeMm(19000)).toBe(3);
+  });
+  it("null when container size unknown", () => {
+    expect(requiredTypeSizeMm(null)).toBe(null);
+    expect(requiredTypeSizeMm(0)).toBe(null);
+  });
+});
+
+describe("compareTypeSize", () => {
+  it("passes at or above the minimum", () => {
+    expect(compareTypeSize(2.4, 2)).toBe("pass");
+    expect(compareTypeSize(2, 2)).toBe("pass");
+  });
+  it("passes within 15% estimation slack", () => {
+    expect(compareTypeSize(1.75, 2)).toBe("pass");
+  });
+  it("fails clearly below the minimum", () => {
+    expect(compareTypeSize(1.3, 2)).toBe("fail");
+    expect(compareTypeSize(0.8, 1)).toBe("fail");
+  });
+  it("unknown when either side is unknown", () => {
+    expect(compareTypeSize(null, 2)).toBe("unknown");
+    expect(compareTypeSize(2, null)).toBe("unknown");
   });
 });

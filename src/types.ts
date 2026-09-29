@@ -22,6 +22,8 @@ export interface LabelApplication {
   alcoholContent: string;
   netContents: string;
   countryOfOrigin?: string;
+  /** Name/address of bottler or producer printed on the label (27 CFR 5.63(b)). */
+  bottler?: string;
 }
 
 /** What the vision model read off the image. */
@@ -38,6 +40,12 @@ export interface Extraction {
     text: string;
     heading_as_printed: string;
     heading_bold: boolean;
+    /** Body text (beyond "GOVERNMENT WARNING") printed bold — forbidden by 27 CFR 16.22(a)(2). */
+    body_bold: boolean;
+    /** Warning sits on a contrasting background — 27 CFR 16.22(a)(1). */
+    contrast_ok: boolean;
+    /** Approximate lowercase-letter height in millimetres; null when the model can't tell (27 CFR 16.22(b)). */
+    type_size_mm: number | null;
   };
 }
 
@@ -53,6 +61,7 @@ export interface VerificationResult {
     classType: FieldVerdict;
     alcoholContent: FieldVerdict;
     netContents: FieldVerdict;
+    bottler?: FieldVerdict;
     countryOfOrigin?: FieldVerdict;
     warning: FieldVerdict;
   };

@@ -58,5 +58,17 @@
       "netContents": "355 mL",
       "countryOfOrigin": "United States"
     }
+  },
+  {
+    "file": "inlet-batch-cases.png",
+    "expectedVerdict": "flag",
+    "expectedFlags": ["warning"],
+    "expectedApplication": {
+      "brandName": "Inlet Bay",
+      "classType": "New England IPA",
+      "alcoholContent": "6.8% Alc./Vol.",
+      "netContents": "473 mL",
+      "countryOfOrigin": "United States"
+    }
   }
 ]

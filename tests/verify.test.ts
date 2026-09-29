@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { errorResult, verifyLabel } from "../src/verify";
+import { buildRegChecks } from "../src/regulations";
 import { WARNING_BODY } from "../src/warning";
 import type { Extraction, LabelApplication } from "../src/types";
 
@@ -21,6 +22,14 @@ function ext(overrides: Partial<Extraction> = {}): Extraction {
       body_bold: false,
       contrast_ok: true,
       type_size_mm: 2.5,
+    },
+    regulation_cues: {
+      brand_format_issue: "none",
+      type_designation_issue: "none",
+      alcohol_type_mismatch: "none",
+      health_claim: "none",
+      disclosure_unverifiable: "none",
+      import_status: "domestic",
     },
     ...overrides,
   };
@@ -288,6 +297,103 @@ describe("verifyLabel summary", () => {
     expect(r.status).toBe("pass"); // readability alone does not flag fields
     expect(r.summary[0]).toContain("unreadable");
     expect(r.summary[0]).toContain("glare; blur");
+  });
+});
+
+describe("buildRegChecks", () => {
+  it("returns one row per rule, all clean on a compliant extraction", () => {
+    const checks = buildRegChecks(ext());
+    expect(checks.length).toBe(10);
+    expect(checks.every((c) => c.status === "pass")).toBe(true);
+    expect(checks.find((c) => c.id === "brand_present")?.citation).toContain("5.64");
+    expect(checks.find((c) => c.id === "warning_format")?.citation).toContain("16.22(a)");
+  });
+
+  it("flags VLM-reported health claims (27 CFR 5.62(f))", () => {
+    const checks = buildRegChecks(
+      ext({
+        regulation_cues: {
+          brand_format_issue: "none",
+          type_designation_issue: "none",
+          alcohol_type_mismatch: "none",
+          health_claim: "\u201cthe cure for stress\u201d printed under the brand",
+          disclosure_unverifiable: "none",
+          import_status: "domestic",
+        },
+      }),
+    );
+    const health = checks.find((c) => c.id === "no_health_claim");
+    expect(health?.status).toBe("flag");
+    expect(health?.detail).toContain("cure for stress");
+    // and it rolls up
+    const r = verifyLabel({ file: "a.png", app: matchingApp, extraction: ext({
+      regulation_cues: {
+        brand_format_issue: "none",
+        type_designation_issue: "none",
+        alcohol_type_mismatch: "none",
+        health_claim: "medical claim printed on the back label",
+        disclosure_unverifiable: "none",
+        import_status: "domestic",
+      },
+    }), latencyMs: 1 });
+    expect(r.status).toBe("flag");
+    expect(r.regulations?.find((c) => c.id === "no_health_claim")?.status).toBe("flag");
+  });
+
+  it("marks unknown cues as not_checked (no claim) instead of flagging", () => {
+    const checks = buildRegChecks(
+      ext({
+        regulation_cues: {
+          brand_format_issue: "unknown",
+          type_designation_issue: "unknown",
+          alcohol_type_mismatch: "none",
+          health_claim: "unknown",
+          disclosure_unverifiable: "unknown",
+          import_status: "unknown",
+        },
+      }),
+    );
+    expect(checks.find((c) => c.id === "brand_format")?.status).toBe("not_checked");
+    expect(checks.find((c) => c.id === "import_contract")?.status).toBe("not_checked");
+    const r = verifyLabel({ file: "a.png", app: matchingApp, extraction: ext({
+      regulation_cues: {
+        brand_format_issue: "unknown",
+        type_designation_issue: "unknown",
+        alcohol_type_mismatch: "none",
+        health_claim: "unknown",
+        disclosure_unverifiable: "unknown",
+        import_status: "unknown",
+      },
+    }), latencyMs: 1 });
+    expect(r.status).toBe("pass"); // unknown never flags
+  });
+
+  it("missing warning block reported missing in checklist", () => {
+    const checks = buildRegChecks(
+      ext({
+        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, type_size_mm: null },
+      }),
+    );
+    expect(checks.find((c) => c.id === "warning_present")?.status).toBe("missing");
+    expect(checks.find((c) => c.id === "warning_format")?.status).toBe("missing");
+  });
+
+  it("import rules: foreign label with full data passes, missing origin flags", () => {
+    const base = {
+      regulation_cues: {
+        brand_format_issue: "none",
+        type_designation_issue: "none",
+        alcohol_type_mismatch: "none",
+        health_claim: "none",
+        disclosure_unverifiable: "none",
+        import_status: "imported" as const,
+      },
+    };
+    const ok = buildRegChecks(ext({ ...base, country_of_origin: "Scotland", bottler: "Imported by Acme, NY" }));
+    expect(ok.find((c) => c.id === "import_contract")?.status).toBe("pass");
+
+    const noOrigin = buildRegChecks(ext({ ...base, country_of_origin: "", bottler: "Imported by Acme, NY" }));
+    expect(noOrigin.find((c) => c.id === "import_contract")?.status).toBe("missing");
   });
 });
 

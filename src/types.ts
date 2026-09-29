@@ -47,6 +47,15 @@ export interface Extraction {
     /** Approximate lowercase-letter height in millimetres; null when the model can't tell (27 CFR 16.22(b)). */
     type_size_mm: number | null;
   };
+  /** Model-side cues for the federal-regulation checklist. "" or "none" = no issue seen; "unknown" = photo can't answer. */
+  regulation_cues: {
+    brand_format_issue: string;
+    type_designation_issue: string;
+    alcohol_type_mismatch: string;
+    health_claim: string;
+    disclosure_unverifiable: string;
+    import_status: "imported" | "domestic" | "unknown";
+  };
 }
 
 export interface VerificationResult {
@@ -69,4 +78,18 @@ export interface VerificationResult {
   summary: string[];
   /** Raw model extraction (label → form prefill). null when extraction failed. */
   extraction?: Extraction | null;
+  /** Federal regulation checklist (deterministic rules over VLM observations). */
+  regulations?: RuleCheck[];
+}
+
+/** One row of the federal-regulation checklist. */
+export interface RuleCheck {
+  id: string;
+  /** Checklist line. */
+  requirement: string;
+  /** Citation appended after an em dash. */
+  citation: string;
+  status: FieldStatus;
+  /** Evidence: what the model saw, or the extracted value. */
+  detail: string;
 }

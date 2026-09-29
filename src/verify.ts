@@ -21,8 +21,10 @@ import {
   requiredTypeSizeMm,
   type TextMatch,
 } from "./normalize";
+import { buildRegChecks, regulationStatuses } from "./regulations";
 import type {
   Extraction,
+  RuleCheck,
   FieldStatus,
   FieldVerdict,
   LabelApplication,
@@ -225,9 +227,11 @@ export function verifyLabel(args: VerifyLabelArgs): VerificationResult {
     fields.bottler = checkTextField("Bottler", app.bottler, extraction.bottler);
   }
 
+  const regChecks = buildRegChecks(extraction);
   const statuses = Object.values(fields)
     .filter((f): f is FieldVerdict => f != null && typeof f === "object" && "status" in f)
-    .map((f) => f.status);
+    .map((f) => f.status)
+    .concat(regulationStatuses(regChecks));
   const status = rollUp(statuses);
 
   const partial = {
@@ -236,6 +240,7 @@ export function verifyLabel(args: VerifyLabelArgs): VerificationResult {
     latencyMs,
     imageIssues: extraction.readability.issues,
     fields,
+    regulations: regChecks,
   } as const;
 
   return { ...partial, summary: buildSummary(fields, extraction.readability) };

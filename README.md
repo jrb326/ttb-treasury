@@ -1,6 +1,6 @@
 # LabelCheck
 
-A take-home prototype for TTB alcohol-beverage label compliance review. The core job is **extracting the label data from a photo to prefill the application**: upload a label image (or a batch) and LabelCheck reads it with a vision model — brand name, class/type, alcohol content, net contents, bottler/producer, country of origin — returning a structured record you review and correct. The same extraction powers the government-warning checks against 27 CFR part 16 (heading format, body text, minimum type size). When a filed application value is present (typed form fields, or a CSV joined by filename), every extracted field is also compared against it: matching fields pass, differing ones flag. It does not decide compliance — the difference here (or the reviewed extraction, if no filed value exists) is the deliverable, and the reviewer makes the call.
+A take-home prototype for TTB alcohol-beverage label compliance review. The core job is **extracting the label data from a photo to prefill the application**: upload a label image (or a batch) and LabelCheck reads it with a vision model — brand name, class/type, alcohol content, net contents, bottler/producer, country of origin — returning a structured record you review and correct. The same extraction powers the government-warning checks against 27 CFR part 16 (heading format, body text, minimum type size). When a filed application value is present (typed form fields, or a CSV joined by filename), every extracted field is also compared against it: matching fields pass, differing ones flag. The same pass also scores the label against a **federal-regulation checklist** (27 CFR citations, VLM observations) rendered in the left panel. It does not decide compliance — the difference here (or the reviewed extraction, if no filed value exists) is the deliverable, and the reviewer makes the call.
 
 ## Quick start & deploy (Cloudflare)
 
@@ -105,6 +105,7 @@ Tracked against `treasurytakehome-rgb/instructions` README (the take-home brief)
 | Nothing crazy / no storage (Marcus) | no KV/D1/R2, no image persistence, stateless verify-and-forget |
 | Bot protection before AI spend | Turnstile siteverify gate in front of `/api/verify` (design rationale in *Bot protection*) |
 | 5 verdicts in sample-label matrix; extra fixtures encouraged | 6 synthetic fixtures + `scripts/expected-results.json` ground truth |
+| Federal-regulation check using the VLM + left-panel checklist | `regulation_cues` extraction + `src/regulations.ts` (10 cited rules) → `#reg-card` in the left pane; VLM marks "unknown", not checked, never flags |
 
 Known gaps are listed under *Trade-offs and limitations* (notably: typographic instructions cannot be read out of a photo except by model judgement, and original artwork files would be required for exact font metadata).
 

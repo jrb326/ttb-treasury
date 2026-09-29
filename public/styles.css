@@ -65,6 +65,25 @@ body {
 .card--demo h2 { font-size: 1.0625rem; margin-bottom: .5rem; }
 #demo-gone { margin-top: .75rem; }
 
+/* ── Federal regulation checklist (left pane) ─────────────────────────────── */
+.regcheck { list-style: none; margin: .75rem 0 0; padding: 0; }
+.regrow {
+  border: 1px solid var(--ibm-gray-20, #e0e0e0);
+  border-left: 3px solid var(--ibm-gray-30, #e0e0e0);
+  padding: .625rem .75rem;
+  margin-bottom: .5rem;
+  background: #fff;
+}
+.regrow--pass { border-left-color: #24a148; }
+.regrow--flag { border-left-color: #f1c21b; }
+.regrow--missing { border-left-color: #da1e28; }
+.regrow--error { border-left-color: #da1e28; }
+.regrow--not_checked { border-left-color: var(--ibm-gray-40, #a8a8a8); border-left-style: dashed; }
+.regrow__head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.regrow__req { font: 600 .875rem/1.35 'IBM Plex Sans', sans-serif; color: #161616; flex: 1 1 12rem; }
+.regrow__cite { font: 400 .75rem 'IBM Plex Sans', sans-serif; color: #6f6f6f; white-space: nowrap; }
+.regrow__detail { margin: .375rem 0 0; font: 400 .8125rem/1.45 'IBM Plex Sans', sans-serif; color: #525252; }
+
 #robot-check { min-height: 65px; margin: .75rem 0; }  /* reserved space, no layout jump */
 
 fieldset { border: 0; margin: 0; padding: 0; }

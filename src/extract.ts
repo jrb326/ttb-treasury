@@ -22,16 +22,27 @@ export const EXTRACTION_PROMPT = `You are reading an alcohol beverage label for 
 
 JSON keys: readable (boolean; false if glare/blur/crop/skew makes text unreliable), issues (string[] of image problems, [] if none), brand_name, class_type, alcohol_content, net_contents, bottler, country_of_origin (strings), government_warning {present (boolean), text (string, body verbatim), heading_as_printed (e.g. "GOVERNMENT WARNING:" exactly as rendered), heading_bold (boolean), body_bold (boolean; true if any text AFTER the "GOVERNMENT WARNING:" heading is bold/eye-catching), contrast_ok (boolean; false if the warning text and its background preclude easy reading), type_size_mm (number or null; approximate x-height in millimetres of the SMALL body text in the warning — estimate from character density and the label's real-world width of ~90 mm; use null if unreadable)}. TTB requires minimum warning type sizes under 27 CFR 16.22(b): 1 mm for containers ≤237 mL, 2 mm for ≤3 L, 3 mm larger, and a clearly contrasting background (16.22(a)(1)).
 
+Also report regulation_cues {brand_format_issue (string: "none" if the brand name is printed plainly with no age/quality/type claim embedded, otherwise a short description of what violates 27 CFR 5.64; "unknown" if you cannot tell), type_designation_issue (string: "none" if class/type looks like a correct standard identity, else short description; "unknown" if unclear), alcohol_type_mismatch (string: "none" if no state/geographic contradiction between the alcohol statement and the product type (e.g. "Kentucky Straight Bourbon" with "California"), else short description; "unknown" if unclear), health_claim (string: "none" if the label makes no curative/therapeutic or implied health-benefit statement, else short quote; "unknown" if unclear), disclosure_unverifiable (string: "none" if you see no age statement/neutral-spirit %/color additive that would trigger 5.63(c) disclosure, else short description; "unknown" if text too small), import_status ("imported" if the label says imported/imported by/product of a foreign country, "domestic" if US bottler/distiller address only, "unknown" otherwise)}.
+
 Reply with ONLY the JSON object.`;
 
 /** Coerce whatever the model returned into a well-typed Extraction with sane defaults. */
 export function coerceExtraction(raw: unknown): Extraction {
   const o = asRecord(raw) ?? {};
   const warning = asRecord(o.government_warning) ?? {};
+  const cues = asRecord(o.regulation_cues) ?? {};
   const readability = asRecord(o.readability);
   const issues = Array.isArray(readability?.issues)
     ? readability.issues.filter((i): i is string => typeof i === "string")
     : [];
+  // Cue tri-state: reported issue / "none" / "unknown". Absent key = assume clean ("none").
+  const cue = (v: unknown): string => {
+    const s = asNonEmptyString(v);
+    if (!s) return "none";
+    const lc = s.trim().toLowerCase();
+    return lc === "unknown" ? "unknown" : s.trim();
+  };
+  const imp = asNonEmptyString(cues.import_status)?.toLowerCase();
 
   return {
     // Absent readability info → assume readable; explicit false only from the model.
@@ -56,6 +67,14 @@ export function coerceExtraction(raw: unknown): Extraction {
         warning.type_size_mm > 0
           ? warning.type_size_mm
           : null,
+    },
+    regulation_cues: {
+      brand_format_issue: cue(cues.brand_format_issue),
+      type_designation_issue: cue(cues.type_designation_issue),
+      alcohol_type_mismatch: cue(cues.alcohol_type_mismatch),
+      health_claim: cue(cues.health_claim),
+      disclosure_unverifiable: cue(cues.disclosure_unverifiable),
+      import_status: imp === "imported" || imp === "domestic" ? imp : "unknown",
     },
   };
 }

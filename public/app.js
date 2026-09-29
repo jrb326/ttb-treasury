@@ -3,6 +3,7 @@
 
 // ── constants ────────────────────────────────────────────────────────────────
 const TURNSTILE_SITEKEY = "0x4AAAAAAFHT209vgWKKWBl2"; // widget: treasury-labelcheck-verify
+const API_URL = "/api/verify";  // single Worker route (must match src/index.ts)
 const MAX_ITEMS = 10;          // server limit per request
 const MIN_TOKEN_LEN = 55;      // shorter tokens are test placeholders → treat as absent
 
@@ -306,6 +307,28 @@ function renderResult(result) {
   return wrap;
 }
 
+// ── federal regulation checklist (server-computed over VLM observations) ────
+function renderRegList(result, target) {
+  clear(target);
+  const checks = Array.isArray(result.regulations) ? result.regulations : [];
+  checks.forEach(function (c) {
+    const li = el("li", "regrow regrow--" + (c.status || "not_checked"));
+    const head = el("div", "regrow__head");
+    head.appendChild(statusPill(c.status));
+    head.appendChild(el("span", "regrow__req", c.requirement));
+    head.appendChild(el("span", "regrow__cite", c.citation));
+    li.appendChild(head);
+    li.appendChild(el("p", "regrow__detail", c.detail));
+    target.appendChild(li);
+  });
+  return checks.length > 0;
+}
+
+function showRegCard(result) {
+  const ok = result && renderRegList(result, $("reg-list"));
+  show($("reg-card"), !!ok);
+}
+
 // ── CSV parsing (RFC4180-ish: quotes, doubled quotes, CRLF) ─────────────────
 function parseCsv(text) {
   const rows = [];
@@ -553,6 +576,7 @@ async function checkSingle() {
     if (results.length) {
       const result = results[0];
       prefillFromExtraction(result.extraction);
+      showRegCard(result);
       out.appendChild(renderResult(result));
     }
     show(out, true);
@@ -664,7 +688,12 @@ function appendBatchRow(result) {
   sum.appendChild(el("span", "fname", result.file));
   if (brand) sum.appendChild(el("span", "brand", brand));
   sum.appendChild(el("span", "lat", ((result.latencyMs || 0) / 1000).toFixed(1) + " s"));
-  sum.addEventListener("toggle", function () { if (det.open) viewBatchFile(result.file); });
+  sum.addEventListener("toggle", function () {
+    if (det.open) {
+      viewBatchFile(result.file);
+      showRegCard(result);
+    }
+  });
   det.appendChild(sum);
   const details = el("div", "details");
   details.appendChild(renderResult(result));

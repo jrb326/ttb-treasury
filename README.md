@@ -2,15 +2,15 @@
 
 A take-home prototype for TTB alcohol-beverage label compliance review. The core job is **extracting the label data from a photo to prefill the application**: upload a label image (or a batch) and LabelCheck reads it with a vision model — brand name, class/type, alcohol content, net contents, bottler/producer, country of origin — returning a structured record you review and correct. The same extraction powers the government-warning checks against 27 CFR part 16 (heading format, body text, minimum type size). When a filed application value is present (typed form fields, or a CSV joined by filename), every extracted field is also compared against it: matching fields pass, differing ones flag. It does not decide compliance — the difference here (or the reviewed extraction, if no filed value exists) is the deliverable, and the reviewer makes the call.
 
-## Quick start
+## Quick start & deploy (Cloudflare)
 
 ```bash
 npm install
-npx wrangler login
+npx wrangler login                    # session for deploys (this is NOT the AI token)
 npx wrangler secret put TURNSTILE_SECRET   # Turnstile secret key from the dashboard
 npx wrangler secret put AGENT_AI_TOKEN     # Cloudflare API token, Account → Workers AI → Edit
 npm run dev                                # http://localhost:8787
-npm run deploy
+npm run deploy                             # → https://treasury-labelcheck.jrb326.workers.dev
 ```
 
 `AGENT_AI_TOKEN` is an **API token** (dash → profile → API tokens → custom, `Account / Workers AI / Edit`), chosen so the Worker can call the OpenAI-compatible endpoint with a short-lived `fetch` instead of holding an account-scoped credential. Store it without ever printing it:
@@ -107,6 +107,32 @@ Tracked against `treasurytakehome-rgb/instructions` README (the take-home brief)
 | 5 verdicts in sample-label matrix; extra fixtures encouraged | 6 synthetic fixtures + `scripts/expected-results.json` ground truth |
 
 Known gaps are listed under *Trade-offs and limitations* (notably: typographic instructions cannot be read out of a photo except by model judgement, and original artwork files would be required for exact font metadata).
+
+## Approach, tools and assumptions
+
+**Approach.** One vision-model call per image produces a structured record — the label data that prefills the application — and every *judgment* in the app is deterministic code after that. The model transcribes; `normalize.ts`/`verify.ts` decide. Splitting it this way means rules can be fixed without prompt engineering, verdicts are unit-testable, and a model failure surfaces as a red `error` row instead of a confident wrong answer. A 9 s hard abort + Sarah's 5 s badge keeps latency honest; measured 2.3–3.8 s per label over the fixture set.
+
+**Tools.**
+
+| Layer | Choice | Why |
+|---|---|---|
+| Hosting | Cloudflare Workers + static assets (`wrangler`) | one command deploy, no server to run, Workers AI lives on the same account |
+| Inference | `@cf/meta/llama-4-scout-17b-16e-instruct` via OpenAI-compatible REST | only route that actually delivered pixels on this account (the `env.AI` binding silently dropped every image-input shape); scout beat mistral on latency and `heading_bold` accuracy |
+| Bot gate | Cloudflare Turnstile (widget + server siteverify, fail-closed) | protects the free-tier AI quota before a token is spent |
+| Frontend | vanilla HTML/CSS/JS + vendored IBM Carbon 10.58.1 + IBM Plex Sans | no framework to build; Carbon meets the plain-UI ask; *vendored* because the environment blocks CDN egress |
+| Tests | vitest (79) + `tsc --noEmit`; puppeteer-core E2E/radius audits | deterministic core gets unit tests; browser flows get one script |
+| Fixtures | sharp + SVG → PNG (`scripts/make-labels.mjs`) | reproducible ground-truth labels, including deliberate violations |
+
+**Assumptions made.**
+
+1. No COLA system access — the "filed application" is whatever the reviewer types or drops into `samples.csv`, joined to photos by **exact filename**.
+2. Form fields are optional inputs, not requirements: empty = "extraction only" (`No filed value` pill); populated = compare against the printed label.
+3. Style-only differences (casing/punctuation) are **acceptable**, per Dave's `STONE'S THROW` story; word changes are not.
+4. Warning + type-size legibility checks treat model observations (`heading_bold`, `type_size_mm`, `contrast_ok`) as evidence with **15% slack** — model judgement, not font metadata; exactness needs the original artwork (see *Trade-offs*).
+5. Verdict semantics: `pass` / `flag` / `error` only; the tool flags, the reviewer decides; `error` means "couldn't read it", never "it passed."
+6. Batch = sequential chunks of 10, client-side CSV parse, zero server storage (Marcus's "don't store anything sensitive").
+7. Sample labels are synthetic; the repo contains no third-party label artwork.
+8. Secrets never touch the repo: `AGENT_AI_TOKEN`/`TURNSTILE_SECRET` live in `.dev.vars` (gitignored) and `wrangler secret`; `.gitignore` also excludes `.env*`, `*.pem`, `*.key`, `*token*` and similar so a GitHub upload stays clean.
 
 ## Trade-offs and limitations
 

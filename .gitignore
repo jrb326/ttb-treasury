@@ -1,4 +1,32 @@
+# ── env & deps ──
 node_modules/
+
+# ── Cloudflare / Wrangler ──
 .wrangler/
 .dev.vars
+.dev.vars.*
+secrets.json
+*.secrets.json
+
+# ── dotenv-style environment keys (never commit) ──
+.env
+.env.*
+!.env.example
+*.env
+custom-env.sh
+
+# ── credential files that may wander into the source tree ──
+*.pem
+*.key
+*.p12
+*.pfx
+*token*
+!**/no-token*
+credentials.json
+.cf-ai-token
+
+# ── misc ──
 *.log
+npm-debug.log*
+.DS_Store
+.hf-home/

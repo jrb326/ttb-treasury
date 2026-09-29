@@ -152,7 +152,11 @@ export function compareWarning(
   headingBold: boolean,
   bodyBold = false,
 ): { textMatch: TextMatch; headingPass: boolean; headingNotice: string | null } {
-  const textMatch = matchText(WARNING_BODY, labelText);
+  // Extractors return the stamp together with the body ("GOVERNMENT WARNING: (1)…").
+  // The heading is judged separately below — drop any leading heading before
+  // comparing the body, so an honest label isn't flagged as "similar".
+  const body = labelText.replace(/^\s*GOVERNMENT\s+WARNING\s*:?\s+/i, "");
+  const textMatch = matchText(WARNING_BODY, body);
   const headingOk =
     headingAsPrinted.trim().toUpperCase().replace(/\s+/g, " ") === "GOVERNMENT WARNING:";
   const headingPass = headingOk && headingBold && !bodyBold;

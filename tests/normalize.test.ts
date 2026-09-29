@@ -171,3 +171,23 @@ describe("compareWarning", () => {
     expect(r.headingNotice).toContain("must NOT be bold");
   });
 });
+
+describe("compareWarning heading-in-body tolerance", () => {
+  it("exact body plus a leading heading stamp matches exactly", () => {
+    const r = compareWarning(
+      "GOVERNMENT WARNING: " + WARNING_BODY,
+      "GOVERNMENT WARNING:",
+      true,
+    );
+    expect(r.textMatch).toBe("exact");
+    expect(r.headingPass).toBe(true);
+  });
+  it("heading stamp without colon still counts", () => {
+    const r = compareWarning("GOVERNMENT WARNING " + WARNING_BODY, "GOVERNMENT WARNING:", true);
+    expect(r.textMatch).toBe("exact");
+  });
+  it("tampered text with heading still fails as mismatch", () => {
+    const r = compareWarning("GOVERNMENT WARNING: drink responsibly daily.", "GOVERNMENT WARNING:", true);
+    expect(["similar", "mismatch"]).toContain(r.textMatch);
+  });
+});

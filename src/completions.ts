@@ -17,11 +17,13 @@ export type ChatContent = TextPart | ImagePart;
 export interface ChatClient {
   complete(content: ChatContent[], opts?: { maxTokens?: number }): Promise<string>;
   /**
-   * Token usage of the most recent successful call, for neuron settlement.
-   * null before any call / when the model never answered (error paths):
-   * the budget then charges the full reservation — never invents usage.
+   * CUMULATIVE token usage across every successful call this client has
+   * made — summed, never overwritten. Retry-on-garbage in src/extract.ts
+   * makes two calls per label sometimes; the budget ledger must see both,
+   * and callers derive per-call cost as the delta between observations.
+   * Starts at null (no successful call yet): callers report 0, never guess.
    */
-  usage?: { prompt: number; completion: number } | null;
+  usageTotal?: { prompt: number; completion: number } | null;
 }
 
 export interface RestChatEnv {
@@ -37,7 +39,7 @@ const COMPLETIONS_TIMEOUT_MS = 9000;
 
 export function restChatClient(env: RestChatEnv): ChatClient {
   const client: ChatClient = {
-    usage: null,
+    usageTotal: null,
     async complete(content, opts) {
       const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/ai/v1/chat/completions`;
       const controller = new AbortController();
@@ -64,9 +66,10 @@ export function restChatClient(env: RestChatEnv): ChatClient {
         };
         const text = data.choices?.[0]?.message?.content;
         if (typeof text !== "string" || text.length === 0) throw new Error("empty completion");
-        client.usage = {
-          prompt: data.usage?.prompt_tokens ?? 0,
-          completion: data.usage?.completion_tokens ?? 0,
+        const prev = client.usageTotal;
+        client.usageTotal = {
+          prompt: (prev?.prompt ?? 0) + (data.usage?.prompt_tokens ?? 0),
+          completion: (prev?.completion ?? 0) + (data.usage?.completion_tokens ?? 0),
         };
         return text;
       } finally {

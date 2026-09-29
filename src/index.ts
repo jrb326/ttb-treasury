@@ -12,8 +12,9 @@ import { verifyTurnstileToken } from "./siteverify";
 import { errorResult, verifyLabel } from "./verify";
 import {
   DAILY_BUDGET,
-  RESERVE_PER_LABEL,
+  neuronsFor,
   reserve,
+  reserveForImage,
   settle,
   type BudgetD1,
 } from "./budget";
@@ -111,6 +112,8 @@ async function verifyItems(
   const results: VerificationResult[] = [];
   let actualNeurons = 0;
   let succeeded = 0;
+  let seenPrompt = 0;
+  let seenCompletion = 0;
   for (const item of items) {
     const started = Date.now();
     try {
@@ -122,13 +125,14 @@ async function verifyItems(
         }
       }
       const extraction = await extractWithBudget(chat, item.image);
-      // Client just completed a call → read its reported usage immediately
-      // (multi-item batches accumulate; the field is overwritten next item).
-      const u = chat.usage;
-      if (u && (u.prompt > 0 || u.completion > 0)) {
-        actualNeurons += Math.ceil(
-          (u.prompt * 24545 + u.completion * 77273) / 1_000_000, // scout pricelist rates
-        );
+      // usageTotal is cumulative across ALL calls (incl. retry-on-garbage):
+      // charge exactly the delta this label added — never a single-call read
+      // that would silently drop a retry's tokens.
+      const u = chat.usageTotal;
+      if (u && (u.prompt > seenPrompt || u.completion > seenCompletion)) {
+        actualNeurons += neuronsFor(u.prompt - seenPrompt, u.completion - seenCompletion);
+        seenPrompt = u.prompt;
+        seenCompletion = u.completion;
       }
       succeeded++;
       const verdict = verifyLabel({ file: item.file, app: item.app, extraction, latencyMs: Date.now() - started });
@@ -193,14 +197,16 @@ export default {
         items.push(item);
       }
 
-      // Daily free-tier rate limit (Cloudflare Workers AI: 10,000 neurons/day,
+      // Daily free-tier rate limit (Workers AI: 10,000 neurons/day free,
       // reset 00:00 UTC). Reserve BEFORE any model call — fails closed, no AI
-      // access at all once today's cap is spent. Settle after: charge real
-      // usage, refund the remainder of the reservation. No BUDGET binding
-      // (unit tests, wrangler without d1) → limit skipped, production only.
-      let reservation = items.length * RESERVE_PER_LABEL;
+      // access once today's cap is spent. Per-label reserve scales with image
+      // pixel size (phone photo ≠ fixture); settle afterwards charges real
+      // usage and may exceed the reservation (ledger never under-reports).
+      // No BUDGET binding (unit tests, wrangler without d1) → limit skipped.
+      const costs = items.map((it) => reserveForImage(it.image));
+      let reservation = costs.reduce((a, b) => a + b, 0);
       if (env.BUDGET) {
-        const r = await reserve(env.BUDGET, items.length);
+        const r = await reserve(env.BUDGET, costs);
         if (!r.ok) {
           return json({
             error: "DAILY_BUDGET_EXHAUSTED",
@@ -215,15 +221,17 @@ export default {
       const chat = env.CHAT ?? restChatClient(env);
       const { results, actualNeurons, succeeded } = await verifyItems(env, chat, items);
 
-      if (env.BUDGET && reservation > 0) {
-        // What was actually spent, max = reservation:
-        //  - injected test double → 0 (fake calls, no real neurons) → full refund
-        //  - real client with reported usage → measured cost from verifyItems
-        //  - zero usage after failures → keep full reservation (aborted calls
-        //    still consumed neurons server-side; never invent a lower number)
-        let charged = reservation;
-        if (env.CHAT) charged = 0;
-        else if (succeeded > 0 && actualNeurons > 0) charged = Math.min(actualNeurons, reservation);
+      if (env.BUDGET) {
+        // What the ledger must reflect after the run:
+        //  - injected test double → 0 (fake calls) → refund the reservation in full
+        //  - measured usage (cumulative deltas, retries included) → charge exactly;
+        //    can exceed the reservation when the estimate was low — that's an
+        //    intentional ledger adjustment toward CF's real number
+        //  - no measurement (calls aborted before usage; or usage-missing HTTP)
+        //    → keep the reservation (server-side tokens were spent; never invent lower)
+        const charged = env.CHAT ? 0
+          : succeeded > 0 && actualNeurons > 0 ? actualNeurons
+          : reservation;
         await settle(env.BUDGET, charged, reservation);
       }
 

@@ -12,13 +12,10 @@
  */
 
 import {
-  compareTypeSize,
   compareWarning,
   matchAbv,
   matchNetContents,
   matchText,
-  parseVolume,
-  requiredTypeSizeMm,
   type TextMatch,
 } from "./normalize";
 import { buildRegChecks, regulationStatuses } from "./regulations";
@@ -142,17 +139,16 @@ function checkWarning(ext: Extraction): FieldVerdict {
     };
   }
 
-  // Type size — 27 CFR 16.22(b): 1 mm ≤237 mL, 2 mm ≤3 L, 3 mm above.
-  const requiredMm = requiredTypeSizeMm(parseVolume(ext.net_contents)?.ml ?? null);
-  const size = compareTypeSize(w.type_size_mm, requiredMm);
-  if (size === "fail") {
+  // Visual legibility (27 CFR 16.22(b)): the VLM reports only clear smallness;
+  // "unknown"/absent → no claim. mm-numeric sizing was dropped: scout returned a
+  // constant 1.5 mm across all fixtures (measured), and a voxelless estimate can't
+  // discriminate 1.3mm microprint from 1.8mm normal text.
+  if (w.size_issue !== "none" && w.size_issue !== "unknown") {
     return {
       expected,
       onLabel,
       status: "flag",
-      note:
-        `warning type size ≈ ${w.type_size_mm} mm — below the ${requiredMm} mm minimum ` +
-        "required for this container size (27 CFR 16.22(b)); must be plainly legible",
+      note: `warning type size: ${w.size_issue} — must be readily legible (27 CFR 16.22(b))`,
     };
   }
 

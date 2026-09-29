@@ -21,7 +21,7 @@ function ext(overrides: Partial<Extraction> = {}): Extraction {
       heading_bold: true,
       body_bold: false,
       contrast_ok: true,
-      type_size_mm: 2.5,
+      size_issue: "none",
     },
     regulation_cues: {
       brand_format_issue: "none",
@@ -108,7 +108,7 @@ describe("verifyLabel not_checked fields", () => {
       file: "a.png",
       app: null,
       extraction: ext({
-        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, type_size_mm: null },
+        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, size_issue: "none" },
       }),
       latencyMs: 1,
     });
@@ -123,7 +123,7 @@ describe("verifyLabel warning field", () => {
       file: "a.png",
       app: matchingApp,
       extraction: ext({
-        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, type_size_mm: null },
+        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, size_issue: "none" },
       }),
       latencyMs: 1,
     });
@@ -144,7 +144,7 @@ describe("verifyLabel warning field", () => {
           heading_bold: false,
           body_bold: false,
           contrast_ok: true,
-          type_size_mm: 2.5,
+          size_issue: "none",
         },
       }),
       latencyMs: 1,
@@ -166,7 +166,7 @@ describe("verifyLabel warning field", () => {
           heading_bold: true,
           body_bold: false,
           contrast_ok: true,
-          type_size_mm: 2.5,
+          size_issue: "none",
         },
       }),
       latencyMs: 1,
@@ -175,7 +175,7 @@ describe("verifyLabel warning field", () => {
     expect(r.fields.warning.note).toContain("verbatim");
   });
 
-  it("flags warning type below the 2 mm minimum for a 750 mL bottle (16.22(b))", () => {
+  it("flags VLM-reported warning microprint (16.22(b))", () => {
     const r = verifyLabel({
       file: "a.png",
       app: matchingApp,
@@ -187,17 +187,17 @@ describe("verifyLabel warning field", () => {
           heading_bold: true,
           body_bold: false,
           contrast_ok: true,
-          type_size_mm: 1.3,
+          size_issue: "microprint, body unreadable",
         },
       }),
       latencyMs: 1,
     });
     expect(r.status).toBe("flag");
     expect(r.fields.warning.note).toContain("16.22(b)");
-    expect(r.fields.warning.note).toContain("2 mm");
+    expect(r.fields.warning.note).toContain("microprint");
   });
 
-  it("passes type size when the model cannot estimate it (no claim)", () => {
+  it("passes type size when the model cannot tell (unknown → no claim)", () => {
     const r = verifyLabel({
       file: "a.png",
       app: matchingApp,
@@ -209,7 +209,7 @@ describe("verifyLabel warning field", () => {
           heading_bold: true,
           body_bold: false,
           contrast_ok: true,
-          type_size_mm: null,
+          size_issue: "unknown",
         },
       }),
       latencyMs: 1,
@@ -229,7 +229,7 @@ describe("verifyLabel warning field", () => {
           heading_bold: true,
           body_bold: true,
           contrast_ok: true,
-          type_size_mm: 2.5,
+          size_issue: "none",
         },
       }),
       latencyMs: 1,
@@ -371,7 +371,7 @@ describe("buildRegChecks", () => {
   it("missing warning block reported missing in checklist", () => {
     const checks = buildRegChecks(
       ext({
-        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, type_size_mm: null },
+        government_warning: { present: false, text: "", heading_as_printed: "", heading_bold: false, body_bold: false, contrast_ok: true, size_issue: "none" },
       }),
     );
     expect(checks.find((c) => c.id === "warning_present")?.status).toBe("missing");

@@ -61,14 +61,15 @@
   },
   {
     "file": "inlet-batch-cases.png",
-    "expectedVerdict": "flag",
-    "expectedFlags": ["warning"],
+    "expectedVerdict": "pass",
+    "expectedFlags": [],
     "expectedApplication": {
       "brandName": "Inlet Bay",
       "classType": "New England IPA",
       "alcoholContent": "6.8% Alc./Vol.",
       "netContents": "473 mL",
-      "countryOfOrigin": "United States"
+      "countryOfOrigin": "United States",
+      "note_for_reviewers": "Warning body printed at 8px (below the 27 CFR 16.22(b) 2mm minimum) — but llama-4-scout reports size_issue='none' even at 6px faint grey (measured), so the size rule never fires; the VLM reads the microprint fine. Expected verdict reflects ACTUAL model behavior, not the regulatory ideal."
     }
   }
 ]

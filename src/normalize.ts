@@ -165,28 +165,3 @@ export function compareWarning(
         : null;
   return { textMatch, headingPass, headingNotice };
 }
-
-/**
- * Minimum warning type size in millimetres — 27 CFR 16.22(b):
- * containers ≤237 mL → 1 mm; >237 mL to 3 L → 2 mm; larger → 3 mm.
- * `netMl` null (net contents unreadable) → null (not checkable).
- */
-export function requiredTypeSizeMm(netMl: number | null): number | null {
-  if (netMl === null || !isFinite(netMl) || netMl <= 0) return null;
-  if (netMl <= 237) return 1;
-  if (netMl <= 3000) return 2;
-  return 3;
-}
-
-/**
- * Compare estimated warning x-height to the CFR minimum.
- * 15% slack absorbs vision-model estimation error (noisy pixel→mm scaling);
- * flag only when clearly below. null measurement → "unknown" (no claim).
- */
-export function compareTypeSize(
-  measuredMm: number | null,
-  requiredMm: number | null,
-): "pass" | "fail" | "unknown" {
-  if (measuredMm === null || requiredMm === null) return "unknown";
-  return measuredMm >= requiredMm * 0.85 ? "pass" : "fail";
-}

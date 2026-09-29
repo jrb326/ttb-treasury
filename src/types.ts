@@ -44,8 +44,8 @@ export interface Extraction {
     body_bold: boolean;
     /** Warning sits on a contrasting background — 27 CFR 16.22(a)(1). */
     contrast_ok: boolean;
-    /** Approximate lowercase-letter height in millimetres; null when the model can't tell (27 CFR 16.22(b)). */
-    type_size_mm: number | null;
+    /** Warning body readable at normal size, or a visual smallness complaint (27 CFR 16.22(b)). */
+    size_issue: string;
   };
   /** Model-side cues for the federal-regulation checklist. "" or "none" = no issue seen; "unknown" = photo can't answer. */
   regulation_cues: {

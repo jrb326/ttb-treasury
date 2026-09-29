@@ -2,10 +2,9 @@
  * Vision-model extraction: label image → typed Extraction JSON.
  *
  * One chat turn with the image inline; strict JSON prompt; parse coercion with
- * one retry on garbage output. Latency: abstractions around fetch carry a 9s
- * hard timeout (the completions client aborts); deterministic checks are
- * milliseconds — total budget clears Sarah's 5-second rule on the measured
- * path (scout median ≈ 3.7 s over the fixture set).
+ * one retry on garbage output. Prompt kept SHORT deliberately: measured 5.5-7.6s
+ * with the long form (needs re-timing trimmed); Sarah's 5s rule wins over
+ * prompt bluntness.
  */
 
 import type { ChatClient, TextPart, ImagePart } from "./completions";
@@ -18,12 +17,9 @@ export const HARD_TIMEOUT_MS = 9000;
  * The app's primary job: photo → structured label data (form prefill).
  * Comparison against a filed application only runs when the form carries values.
  */
-export const EXTRACTION_PROMPT = `You are reading an alcohol beverage label for a TTB compliance reviewer. Extract exactly what is PRINTED. Never guess or invent. Use "" when a field is absent.
-
-JSON keys: readable (boolean; false if glare/blur/crop/skew makes text unreliable), issues (string[] of image problems, [] if none), brand_name, class_type, alcohol_content, net_contents, bottler, country_of_origin (strings), government_warning {present (boolean), text (string, body verbatim), heading_as_printed (e.g. "GOVERNMENT WARNING:" exactly as rendered), heading_bold (boolean), body_bold (boolean; true if any text AFTER the "GOVERNMENT WARNING:" heading is bold/eye-catching), contrast_ok (boolean; false if the warning text and its background preclude easy reading), type_size_mm (number or null; approximate x-height in millimetres of the SMALL body text in the warning — estimate from character density and the label's real-world width of ~90 mm; use null if unreadable)}. TTB requires minimum warning type sizes under 27 CFR 16.22(b): 1 mm for containers ≤237 mL, 2 mm for ≤3 L, 3 mm larger, and a clearly contrasting background (16.22(a)(1)).
-
-Also report regulation_cues {brand_format_issue (string: "none" if the brand name is printed plainly with no age/quality/type claim embedded, otherwise a short description of what violates 27 CFR 5.64; "unknown" if you cannot tell), type_designation_issue (string: "none" if class/type looks like a correct standard identity, else short description; "unknown" if unclear), alcohol_type_mismatch (string: "none" if no state/geographic contradiction between the alcohol statement and the product type (e.g. "Kentucky Straight Bourbon" with "California"), else short description; "unknown" if unclear), health_claim (string: "none" if the label makes no curative/therapeutic or implied health-benefit statement, else short quote; "unknown" if unclear), disclosure_unverifiable (string: "none" if you see no age statement/neutral-spirit %/color additive that would trigger 5.63(c) disclosure, else short description; "unknown" if text too small), import_status ("imported" if the label says imported/imported by/product of a foreign country, "domestic" if US bottler/distiller address only, "unknown" otherwise)}.
-
+export const EXTRACTION_PROMPT = `You are reading an alcohol beverage label for a TTB compliance reviewer. Extract exactly what is PRINTED. Never guess or invent. Use "" when absent.
+JSON keys: readable (boolean), issues (string[]), brand_name, class_type, alcohol_content, net_contents, bottler, country_of_origin (strings), government_warning {present, text (body verbatim), heading_as_printed, heading_bold, body_bold, contrast_ok, size_issue}, regulation_cues {brand_format_issue, type_designation_issue, alcohol_type_mismatch, health_claim, disclosure_unverifiable, import_status}.
+For each cue string reply ONE of: "none", "unknown", or a very short quote (max 8 words). issue strings likewise max 8 words. import_status: imported|domestic|unknown. size_issue: "none" unless the warning text is visibly tiny or unreadably small, then a short phrase.
 Reply with ONLY the JSON object.`;
 
 /** Coerce whatever the model returned into a well-typed Extraction with sane defaults. */
@@ -61,12 +57,8 @@ export function coerceExtraction(raw: unknown): Extraction {
       body_bold: warning.body_bold === true,
       /** Contrasting background (27 CFR 16.22(a)(1)); absent signal → assume compliant. */
       contrast_ok: warning.contrast_ok !== false,
-      type_size_mm:
-        typeof warning.type_size_mm === "number" &&
-        isFinite(warning.type_size_mm) &&
-        warning.type_size_mm > 0
-          ? warning.type_size_mm
-          : null,
+      /** Visual smallness complaint (27 CFR 16.22(b)); absent signal → assume readable. */
+      size_issue: asNonEmptyString(warning.size_issue) || "none",
     },
     regulation_cues: {
       brand_format_issue: cue(cues.brand_format_issue),

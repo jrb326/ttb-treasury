@@ -1,7 +1,7 @@
 /**
  * E2E smoke: real Chrome + real Turnstile + real Workers AI via wrangler dev.
- * BUGGY TURNSTILE CANNOT BE FAKED — the site verify + one-token-per-request
- * lifecycle is exactly what this proves.
+ * THE TURNSTILE CHALLENGE CANNOT BE FAKED here — the siteverify round trip +
+ * one-token-per-request lifecycle is exactly what this proves.
  *
  * Usage: `npx wrangler dev --port 8787` then `node scripts/e2e.mjs [base_url]`
  * Exits non-zero on any failed expectation; prints latencies vs 5s goal.

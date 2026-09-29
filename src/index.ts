@@ -103,7 +103,8 @@ function parseItem(raw: unknown, index: number): VerifyItem | null {
 
 /** Verify a chunk of items sequentially (each item = one model call).
  *  Returns measured neuron cost (0 when the client never reported usage) so
- *  the caller can settle the daily budget — never invented, argmax-sourced. */
+ *  the caller can settle the daily budget — charged from observed usage or
+ *  kept as the reservation; never invented. */
 async function verifyItems(
   env: Env,
   chat: ChatClient,

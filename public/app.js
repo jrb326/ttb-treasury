@@ -388,7 +388,9 @@ function csvEscape(v) {
   return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
 }
 
-// ── demo: pre-loaded TTB sample labels (see scripts/make-labels.mjs) ─────────
+// ── demo: pre-loaded TTB sample labels ──────────────────────────────────────
+// Synthetic six from scripts/make-labels.mjs + three real user labels whose
+// records below came from live extraction runs (see README "Sample labels").
 const DEMO_APPS = {
   "oldtom-pass.png": {
     brandName: "Old Tom Distillery",

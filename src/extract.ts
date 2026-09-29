@@ -2,9 +2,9 @@
  * Vision-model extraction: label image → typed Extraction JSON.
  *
  * One chat turn with the image inline; strict JSON prompt; parse coercion with
- * one retry on garbage output. Prompt kept SHORT deliberately: measured 5.5-7.6s
- * with the long form (needs re-timing trimmed); Sarah's 5s rule wins over
- * prompt bluntness.
+ * one retry on garbage output. Prompt kept SHORT deliberately: 5.5–7.6 s with
+ * the long form, down to 3.9–6.1 s (median 5.2 s) trimmed — Sarah's 5 s rule
+ * wins over prompt bluntness; the badge reports whatever actually happens.
  */
 
 import type { ChatClient, TextPart, ImagePart } from "./completions";

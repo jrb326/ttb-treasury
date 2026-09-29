@@ -43,8 +43,9 @@ Turnstile siteverify          fail-closed gate; action must be "verify",
 Workers AI REST     POST …/accounts/:id/ai/v1/chat/completions
   │                 (OpenAI-compatible; model @cf/meta/llama-4-scout-17b-16e-instruct)
   │                 One structured-JSON extraction per image (fields + readability +
-  │                 warning format cues). MEASURED 2.3–3.8 s per label, full parse on
-  │                 all five fixtures. Why REST and not the env.AI binding: every
+  │                 warning format + regulation cues). MEASURED 3.9–6.1 s per label
+  │                 (median 5.2 s) across the current prompt, 6/6 clean parses.
+  │                 Why REST and not the env.AI binding: every
   │                 native image input — moondream ({} responses), prompt+images,
   │                 content-blocks — silently dropped the image on this account;
   │                 only the OpenAI-compatible route delivered pixels (verified by
@@ -70,7 +71,7 @@ Reviewers don't check one bottle; they get import dumps of 200–300 images with
 - The client chunks files into groups of 10 (the server's hard per-request cap) and sends the chunks **sequentially** — each image is one model call, and sequential requests keep a 300-image run simple and resumable from the failed chunk.
 - The CSV of application data is parsed **in the browser** (`public/app.js`), keyed by filename. Nothing about the spreadsheet leaves the machine except the rows for the images being checked.
 - Mismatches surface **before** anything is sent: images with no CSV row are listed (they'll still be checked for warnings/spelling, just with nothing to compare), and CSV rows matching no chosen photo are listed as "won't be sent."
-- **No server storage of anything.** No KV, no D1, no R2, no logs of image content. Per Marcus: nothing sensitive is stored. Each request is stateless: verify and forget. Results CSV is assembled and downloaded client-side.
+- **No server storage of application data or images.** Neither ever persists or is logged; requests are stateless: verify and forget, results CSV assembled client-side. D1 holds exactly one row per day — `ai_budget(day, neurons)` — for the free-tier rate limit (see *Daily AI-budget rate limit*); it contains counts, never content. Per Marcus: nothing sensitive is stored.
 
 ## UX decisions
 
@@ -78,7 +79,7 @@ Reviewers don't check one bottle; they get import dumps of 200–300 images with
 - **Batch mode** exists because the workload is 200–300-image import dumps, not single bottles. Single-image mode stays for quick spot checks.
 - **"My mother could figure out" (stakeholder).** Big controls, three steps: tick the robot box, drop files, click start. Plain-language error copy ("Tick the robot box again before the next check"), no jargon, no modal wizards.
 - **Style-only differences are PASS, not FLAG (Dave's Stone's Throw anecdote).** A label printing `STONE'S THROW` against an application saying `Stone's Throw` is the same words — casing and punctuation are normalized away. Only actual word differences flag.
-- **The warning is held to exactness (Jenny).** The government warning body is compared to the canonical 27 CFR 16.21 statement, and the heading must be rendered ALL CAPS **and** bold per TTB formatting rules. Title-case heading → flag. Missing warning → flag. On top of that the check follows 27 CFR 16.22: text after the heading must *not* be bold, and the warning must meet the minimum type size for the container (1 mm ≤237 mL, 2 mm ≤3 L, 3 mm above) — an estimated x-height below the threshold flags. The type-size estimate is vision-model judgement with 15% slack, so only clearly-too-small type flags.
+- **The warning is held to exactness (Jenny).** The government warning body is compared to the canonical 27 CFR 16.21 statement, and the heading must be rendered ALL CAPS **and** bold per TTB formatting rules. Title-case heading → flag. Missing warning → flag. On top of that the check follows 27 CFR 16.22: text after the heading must *not* be bold, and the warning must sit on a contrasting background. Minimum type size (16.22(b)) is *schema'd but inert on this model* — measurements in *Trade-offs*, so heading/body/contrast and the verbatim text are the operative checks.
 
 ## Bot protection
 
@@ -96,7 +97,7 @@ Tracked against `treasurytakehome-rgb/instructions` README (the take-home brief)
 
 | Requirement | Where |
 |---|---|
-| ~5 s per label or agents won't use it (Sarah) | measured 2.3–3.8 s/fixture; latency badge on every result; 9 s hard abort |
+| ~5 s per label or agents won't use it (Sarah) | measured 3.9–6.1 s/label (median 5.2 s) with the current prompt; latency badge on every result; 9 s hard abort |
 | Batch upload of 200–300 labels (Sarah/Janet) | file picker + optional CSV, chunks of 10 sent sequentially, resume from failed chunk |
 | "My mother could figure it out" UX | three-step flat form, plain-language errors, no wizards |
 | Style-only diff = PASS (Dave, "STONE'S THROW") | `matchText` → `style_only`; fixture `stonesthrow-style.png` must pass |
@@ -105,7 +106,7 @@ Tracked against `treasurytakehome-rgb/instructions` README (the take-home brief)
 | Bottler/producer name+address mandatory (27 CFR 5.63(b)) | "Bottler / producer" form field + `bottler` CSV column, absence → flag when the application provides it |
 | Brand, class/type, ABV, net contents, country of origin | deterministic checks incl. ±0.5% ABV tolerance and mL/L conversion |
 | Vendor firewall (Marcus) | Carbon CSS + Plex fonts served from `public/vendor/`, zero external assets except the Turnstile script |
-| Nothing crazy / no storage (Marcus) | no KV/D1/R2, no image persistence, stateless verify-and-forget |
+| Nothing crazy / no storage (Marcus) | no application data or image persistence; D1 used only for the daily neuron count |
 | Bot protection before AI spend | Turnstile siteverify gate in front of `/api/verify` (design rationale in *Bot protection*) |
 | 5 verdicts in sample-label matrix; extra fixtures encouraged | 6 synthetic fixtures + `scripts/expected-results.json` ground truth |
 | Federal-regulation check using the VLM + left-panel checklist | `regulation_cues` extraction + `src/regulations.ts` (10 cited rules) → `#reg-card` in the left pane; VLM marks "unknown", not checked, never flags |
@@ -114,7 +115,7 @@ Known gaps are listed under *Trade-offs and limitations* (notably: typographic i
 
 ## Approach, tools and assumptions
 
-**Approach.** One vision-model call per image produces a structured record — the label data that prefills the application — and every *judgment* in the app is deterministic code after that. The model transcribes; `normalize.ts`/`verify.ts` decide. Splitting it this way means rules can be fixed without prompt engineering, verdicts are unit-testable, and a model failure surfaces as a red `error` row instead of a confident wrong answer. A 9 s hard abort + Sarah's 5 s badge keeps latency honest; measured 2.3–3.8 s per label over the fixture set.
+**Approach.** One vision-model call per image produces a structured record — the label data that prefills the application — and every *judgment* in the app is deterministic code after that. The model transcribes; `normalize.ts`/`verify.ts` decide. Splitting it this way means rules can be fixed without prompt engineering, verdicts are unit-testable, and a model failure surfaces as a red `error` row instead of a confident wrong answer. A 9 s hard abort + Sarah's 5 s badge keeps latency honest (measured 3.9–6.1 s, median 5.2 s on the fixture set; provider latency varies run to run, so the badge reports what actually happened).
 
 **Tools.**
 
@@ -124,7 +125,7 @@ Known gaps are listed under *Trade-offs and limitations* (notably: typographic i
 | Inference | `@cf/meta/llama-4-scout-17b-16e-instruct` via OpenAI-compatible REST | only route that actually delivered pixels on this account (the `env.AI` binding silently dropped every image-input shape); scout beat mistral on latency and `heading_bold` accuracy |
 | Bot gate | Cloudflare Turnstile (widget + server siteverify, fail-closed) | protects the free-tier AI quota before a token is spent |
 | Frontend | vanilla HTML/CSS/JS + vendored IBM Carbon 10.58.1 + IBM Plex Sans | no framework to build; Carbon meets the plain-UI ask; *vendored* because the environment blocks CDN egress |
-| Tests | vitest (79) + `tsc --noEmit`; puppeteer-core E2E/radius audits | deterministic core gets unit tests; browser flows get one script |
+| Tests | vitest (96 tests, incl. the budget ledger) + `tsc --noEmit`; puppeteer-core E2E/radius audits | deterministic core gets unit tests; browser flows get one script |
 | Fixtures | sharp + SVG → PNG (`scripts/make-labels.mjs`) | reproducible ground-truth labels, including deliberate violations |
 
 **Assumptions made.**
@@ -132,7 +133,7 @@ Known gaps are listed under *Trade-offs and limitations* (notably: typographic i
 1. No COLA system access — the "filed application" is whatever the reviewer types or drops into `samples.csv`, joined to photos by **exact filename**.
 2. Form fields are optional inputs, not requirements: empty = "extraction only" (`No filed value` pill); populated = compare against the printed label.
 3. Style-only differences (casing/punctuation) are **acceptable**, per Dave's `STONE'S THROW` story; word changes are not.
-4. Warning + type-size legibility checks treat model observations (`heading_bold`, `type_size_mm`, `contrast_ok`) as evidence with **15% slack** — model judgement, not font metadata; exactness needs the original artwork (see *Trade-offs*).
+4. Warning legibility checks treat model observations (`heading_bold`, `body_bold`, `contrast_ok`, `size_issue`) as evidence — model judgement, not font metadata; the 27 CFR 16.22(b) minimum-type-size rule is schema'd but inert on this model (see *Trade-offs*), and exactness needs the original artwork.
 5. Verdict semantics: `pass` / `flag` / `error` only; the tool flags, the reviewer decides; `error` means "couldn't read it", never "it passed."
 6. Batch = sequential chunks of 10, client-side CSV parse, zero server storage (Marcus's "don't store anything sensitive").
 7. Sample labels are synthetic; the repo contains no third-party label artwork.
@@ -164,7 +165,7 @@ Honest list, roughly by how much it would cost to fix:
 
 ## Sample labels
 
-Six fixture labels exercise the verdict matrix: clean pass, ABV mismatch, style-only casing (must still pass), title-case warning heading, missing warning, and an under-sized warning (27 CFR 16.22(b)).
+Six synthetic fixtures (`oldtom` … `inlet`) exercise the verdict matrix — clean pass, ABV mismatch, style-only casing (must still pass), title-case warning heading, missing warning, and an under-sized warning that documents the inert size check. The Demo picker also carries three real user-supplied labels (`demo-wheatbeer.png`, `demo-stout-keg.png`, `demo-milos-ale.png`) whose records came from live extraction runs — graphic-backed backgrounds, the case synthetic flat fixtures can't cover.
 
 ```bash
 node scripts/make-labels.mjs     # writes public/*.png (needs sharp, already a devDep)
@@ -185,23 +186,26 @@ IBM Carbon: vendored compiled CSS (`public/vendor/carbon-components.min.css`, ca
 ```
 .
 ├── src/
-│   ├── index.ts        worker entry: routing, request cap, Turnstile gate
-│   ├── siteverify.ts   Turnstile siteverify (fail-closed, action + hostname checks)
-│   ├── completions.ts  OpenAI-compatible chat client (model + 9 s abort)
-│   ├── extract.ts      extraction prompt, JSON coercion, retry + budget
-│   ├── verify.ts       field checks + verdict rollup
-│   ├── normalize.ts    normalization, text/ABV/volume matching, warning compare
-│   ├── warning.ts      canonical 27 CFR part 16 statement
-│   ├── codec.ts        runtime shape guards
-│   └── types.ts        shared types
+│   ├── index.ts         worker entry: routing, request cap, Turnstile gate, budget reserve/settle
+│   ├── siteverify.ts    Turnstile siteverify (fail-closed, action + hostname checks)
+│   ├── completions.ts   OpenAI-compatible chat client (model + 9 s abort + cumulative usage)
+│   ├── extract.ts       extraction prompt, JSON coercion, retry + budget
+│   ├── verify.ts        field checks + verdict rollup
+│   ├── regulations.ts   federal-regulation checklist rules (27 CFR citations)
+│   ├── normalize.ts     normalization, text/ABV/volume matching, warning compare
+│   ├── budget.ts        daily neuron ledger: size-aware reserve + settle
+│   ├── imageSize.ts     PNG/JPEG/WebP header → dimensions (for reserve estimate)
+│   ├── warning.ts       canonical 27 CFR part 16 statement
+│   ├── codec.ts         runtime shape guards
+│   └── types.ts         shared types
 ├── public/             static UI (index.html, app.js, styles.css)
 │   ├── vendor/         vendored Carbon CSS + IBM Plex Sans woff2/woff
 │   ├── samples.csv     demo application data
-│   └── *.png           generated sample labels
+│   └── *.png           generated fixtures + real demo labels
 ├── scripts/
 │   ├── make-labels.mjs      fixture generator (SVG → PNG via sharp)
 │   ├── e2e.mjs              browser E2E: single + batch live flows (puppeteer)
 │   └── expected-results.json ground truth for the fixtures
-├── wrangler.jsonc      Worker config (assets, Turnstile + account vars)
+├── wrangler.jsonc      Worker config (assets, D1, Turnstile + account vars)
 └── .dev.vars           local secrets (gitignored)
 ```

@@ -27,8 +27,9 @@ import { parseImageDimensions } from "./imageSize";
 export const RESERVE_PER_LABEL = 120;
 
 /**
- * Daily cap (neurons). 8,000 = 20% headroom under CF's 10,000 hard stop, so
- * estimator error / aborted-but-billed calls land here, not in a CF 402.
+ * Daily cap (neurons). 8,000 = 20% headroom under CF's 10,000/day hard stop,
+ * so estimator error and aborted-but-billed calls land here instead of
+ * hitting the account ceiling (which fails all further AI operations).
  */
 export const DAILY_BUDGET = 8000;
 

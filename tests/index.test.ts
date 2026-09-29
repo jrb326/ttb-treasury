@@ -187,10 +187,14 @@ describe("POST /api/verify happy path", () => {
       env,
     );
     const { results } = (await res.json()) as {
-      results: Array<{ status: string; fields: Record<string, { status: string }> }>;
+      results: Array<{ status: string; fields: Record<string, { status: string }>; extraction: { brand_name: string; net_contents: string } | null }>;
     };
     expect(results[0].status).toBe("pass");
     expect(results[0].fields.brandName.status).toBe("not_checked");
+    // Extraction is the deliverable: prefills the form even with no filed values.
+    expect(results[0].extraction).not.toBeNull();
+    expect(results[0].extraction?.brand_name).toBe("OLD TOM DISTILLERY");
+    expect(results[0].extraction?.net_contents).toBe("750 mL");
   });
 });
 

@@ -67,4 +67,6 @@ export interface VerificationResult {
   };
   /** Human-readable summary lines for the UI. */
   summary: string[];
+  /** Raw model extraction (label → form prefill). null when extraction failed. */
+  extraction?: Extraction | null;
 }

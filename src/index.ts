@@ -105,10 +105,11 @@ async function verifyItems(env: Env, chat: ChatClient, items: VerifyItem[]): Pro
         }
       }
       const extraction = await extractWithBudget(chat, item.image);
-      results.push(verifyLabel({ file: item.file, app: item.app, extraction, latencyMs: Date.now() - started }));
+      const verdict = verifyLabel({ file: item.file, app: item.app, extraction, latencyMs: Date.now() - started });
+      results.push({ ...verdict, extraction });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      results.push(errorResult(item.file, `verification failed: ${msg}`, Date.now() - started));
+      results.push({ ...errorResult(item.file, `verification failed: ${msg}`, Date.now() - started), extraction: null });
     }
   }
   return results;

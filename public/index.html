@@ -51,7 +51,7 @@
       </section>
 
       <section class="card" aria-labelledby="single-heading">
-        <h2 id="single-heading">Single label check</h2>
+        <h2 id="single-heading">Single label</h2>
 
         <div class="field">
           <label class="bx--label" for="single-file">1. Choose the label photo</label>
@@ -61,8 +61,8 @@
         </div>
 
         <fieldset>
-          <legend>2. Application details</legend>
-          <p class="bx--form__helper-text" id="single-prefill" hidden>Prefilled from your CSV (filename match). Fix anything that looks wrong.</p>
+          <legend>2. Application details — filled from the photo</legend>
+          <p class="bx--form__helper-text" id="single-prefill" hidden>Extracted from the label image. Review every field and correct anything misread before filing.</p>
           <div class="field">
             <label class="bx--label" for="s-brand">Brand name <span class="req">*required</span></label>
             <input class="bx--text-input" type="text" id="s-brand" autocomplete="off" placeholder="As filed in the application">
@@ -91,7 +91,8 @@
         </fieldset>
 
         <div class="actions">
-          <button type="button" class="bx--btn bx--btn--primary bx--btn--field" id="single-check" disabled>Check label</button>
+          <button type="button" class="bx--btn bx--btn--primary bx--btn--field" id="single-check" disabled>Read label</button>
+          <p class="bx--form__helper-text">Extracts the printed data into the fields above, then verifies them — type in a filed application value first to compare against it.</p>
         </div>
 
         <div class="status" id="single-status" hidden aria-live="polite">

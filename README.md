@@ -1,6 +1,6 @@
 # LabelCheck
 
-A take-home prototype for TTB alcohol-beverage label compliance review. Upload a label photo (or a batch of them) plus the COLA application data, and LabelCheck reads the label with a vision model, then runs deterministic comparisons against what the application claims: brand name, class/type, alcohol content, net contents, bottler/producer, country of origin, and the 27 CFR part 16 government warning (text, heading format, and minimum type size). It does not decide compliance — it flags differences between the printed label and the filed application, and the reviewer (the agent, in the real workflow) makes the call. Every verdict carries the field-by-field evidence behind it.
+A take-home prototype for TTB alcohol-beverage label compliance review. The core job is **extracting the label data from a photo to prefill the application**: upload a label image (or a batch) and LabelCheck reads it with a vision model — brand name, class/type, alcohol content, net contents, bottler/producer, country of origin — returning a structured record you review and correct. The same extraction powers the government-warning checks against 27 CFR part 16 (heading format, body text, minimum type size). When a filed application value is present (typed form fields, or a CSV joined by filename), every extracted field is also compared against it: matching fields pass, differing ones flag. It does not decide compliance — the difference here (or the reviewed extraction, if no filed value exists) is the deliverable, and the reviewer makes the call.
 
 ## Quick start
 

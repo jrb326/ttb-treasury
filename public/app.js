@@ -23,7 +23,7 @@ const PILL_LABEL = {
   flag: "Check",
   missing: "Not on label",
   error: "Error",
-  not_checked: "Not checked",
+  not_checked: "No filed value",
 };
 
 const CSV_COLUMNS = {
@@ -444,6 +444,19 @@ async function onDemoPick(e) {
   }
 }
 
+// ── photo → application form: the extraction IS the record we're building ───
+function prefillFromExtraction(ext) {
+  if (!ext) return;
+  const fill = function (id, value) { if (value) $(id).value = value; };
+  fill("s-brand", ext.brand_name);
+  fill("s-class", ext.class_type);
+  fill("s-abv", ext.alcohol_content);
+  fill("s-net", ext.net_contents);
+  fill("s-country", ext.country_of_origin);
+  fill("s-bottler", ext.bottler);
+  show($("single-prefill"), true);
+}
+
 // ── single flow ──────────────────────────────────────────────────────────────
 function onSingleFile(e) {
   const file = e.target.files && e.target.files[0];
@@ -508,18 +521,17 @@ function stopSingleTimer() {
 
 async function checkSingle() {
   if (!state.singleFile || state.singleTimer) return;
-  const brand = $("s-brand").value.trim();
-  if (!brand) {
-    showAlert($("single-error"), "Please enter the brand name exactly as filed in the application.");
-    return;
-  }
 
-  const app = { brandName: brand };
+  // Fields are normally empty on the first run — extraction fills them.
+  // Whatever was typed is sent as the application side for comparison.
+  const app = {};
+  const brand = $("s-brand").value.trim();
   const cls = $("s-class").value.trim();
   const abv = $("s-abv").value.trim();
   const net = $("s-net").value.trim();
   const country = $("s-country").value.trim();
   const bottler = $("s-bottler").value.trim();
+  if (brand) app.brandName = brand;
   if (cls) app.classType = cls;
   if (abv) app.alcoholContent = abv;
   if (net) app.netContents = net;
@@ -538,7 +550,11 @@ async function checkSingle() {
     stopSingleTimer();
     const out = $("single-result");
     clear(out);
-    if (results.length) out.appendChild(renderResult(results[0]));
+    if (results.length) {
+      const result = results[0];
+      prefillFromExtraction(result.extraction);
+      out.appendChild(renderResult(result));
+    }
     show(out, true);
   } catch (err) {
     stopSingleTimer();

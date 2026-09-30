@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TTB Label Checker</title>
-<!-- IBM Carbon compiled theme, vendored: the environment blocks CDN egress (FedRAMP constraint from IT). -->
+<!-- IBM Carbon compiled theme, vendored: the vendor firewall (Marcus) blocks third-party CDN egress. -->
 <link rel="stylesheet" href="vendor/carbon-components.min.css">
 <link rel="stylesheet" href="styles.css">
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -109,7 +109,7 @@
 
       <section class="card" id="reg-card" aria-labelledby="reg-heading" hidden>
         <h2 id="reg-heading">Federal regulation checklist</h2>
-        <p class="bx--form__helper-text">VLM observations scored against 27 CFR — expand any line for the evidence. Rule verdicts feed the overall flag.</p>
+        <p class="bx--form__helper-text">VLM observations scored against 27 CFR — each line carries its evidence. Rule verdicts feed the overall flag.</p>
         <ul class="regcheck" id="reg-list"></ul>
       </section>
 
@@ -136,8 +136,8 @@
         </div>
 
         <div id="batch-progress" hidden aria-live="polite">
-          <div class="bx--progress-bar bx--progress-bar--visible" role="progressbar"
-               aria-label="Batch progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+          <div class="bx--progress-bar" role="progressbar"
+               aria-label="Batch progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <div class="bx--progress-bar__track"><div class="bx--progress-bar__bar" id="batch-bar-fill"></div></div>
             <p class="bx--progress-bar__status" id="batch-progress-text">Preparing…</p>
           </div>
@@ -165,7 +165,7 @@
           <button type="button" class="bx--btn bx--btn--secondary bx--btn--sm" id="viewer-fit" aria-label="Fit to view">Fit</button>
           <button type="button" class="bx--btn bx--btn--tertiary bx--btn--sm" id="viewer-full" aria-label="Open full size">Full size</button>
         </div>
-        <div class="viewer__stage" id="viewer-stage">
+        <div class="viewer__stage">
           <img id="viewer-img" alt="Selected label artwork" hidden>
           <div class="viewer__empty" id="viewer-empty">
             <p class="viewer__empty-title">No label selected</p>

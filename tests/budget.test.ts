@@ -120,7 +120,7 @@ describe("size-aware reserve", () => {
     expect(big).toBeGreaterThan(500);
     expect(big).toBeGreaterThan(fix * 3);
     // a full batch of such photos (~7.6k) still books under the 8,000/day cap —
-    // the *next* batch would 429s at the reserve step, which is correct.
+    // the *next* batch would 429 at the reserve step, which is correct.
     expect(big * 10).toBeLessThan(DAILY_BUDGET);
   });
 

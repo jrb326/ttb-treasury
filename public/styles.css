@@ -25,7 +25,7 @@ body {
   color: var(--ibm-gray-30, #e0e0e0);
 }
 
-/* ── Page / SIEM split shell: application left ⅓, evidence viewer right ⅔ ─── */
+/* ── Page / SIEM split shell: application left ⅓, evidence viewer right ⅔ ──── */
 .page { max-width: 120rem; margin: 0 auto; padding: 1rem 1rem 2rem; }
 
 .shell {
@@ -65,7 +65,7 @@ body {
 .card--demo h2 { font-size: 1.0625rem; margin-bottom: .5rem; }
 #demo-gone { margin-top: .75rem; }
 
-/* ── Federal regulation checklist (left pane) ─────────────────────────────── */
+/* ── Federal regulation checklist (left pane) ──────────────────────────────── */
 .regcheck { list-style: none; margin: .75rem 0 0; padding: 0; }
 .regrow {
   border: 1px solid var(--ibm-gray-20, #e0e0e0);
@@ -95,34 +95,20 @@ fieldset > legend {
   margin-bottom: 1rem;           /* Carbon form group spacing */
 }
 
-.field { margin: 0 0 1.5rem; }   /* Carbon form item bottom margin (48px / 2 in v10 forms ≈ 24px here) */
+.field { margin: 0 0 1.5rem; }   /* 24px stack gap; vendored Carbon sets no .bx--form-item margin */
 .req { color: var(--ibm-red, #da1e28); font-weight: 600; font-size: .875rem; margin-left: .25rem; }
 .hint, .bx--form__helper-text { color: var(--ibm-gray-70, #525252); font-size: .875rem; margin: .25rem 0 0; }
 .hint-inline { font-weight: 400; color: var(--ibm-gray-70, #525252); font-size: .875rem; }
 
-input[type="file"]:file-selector-button {  /* Carbon .bx--file-btn equivalent for the native button */
-  margin-right: .75rem;
-  padding: 0 1rem;
-  height: 3rem;
-  background: transparent;
-  color: #0f62fe;
-  border: 1px solid #0f62fe;
-  border-radius: 0;
-  font: 600 .875rem/1.29 'IBM Plex Sans', sans-serif;
-  letter-spacing: .32px;
-  cursor: pointer;
-}
-input[type="file"]:file-selector-button:hover { background: #0f62fe1a; }
-input[type="file"]:file-selector-button:active { background: #0f62fe33; }
 input[type="file"] { font: 400 .875rem 'IBM Plex Sans', sans-serif; color: var(--ibm-gray-70, #525252); }
 
 .actions { margin-top: 2rem; }
 .actions .bx--btn { min-width: 12rem; }
 
-/* Carbon ghost buttons open photo pickers already; these sit beside hints. */
+/* Ghost clear buttons sit under their file-input hints. */
 #single-clear, #csv-clear { margin-top: .75rem; }
 
-/* ── Right-pane evidence viewer ───────────────────────────────────────────── */
+/* ── Right-pane evidence viewer ────────────────────────────────────────────── */
 .viewer {
   display: flex;
   flex-direction: column;
@@ -202,13 +188,10 @@ input[type="file"] { font: 400 .875rem 'IBM Plex Sans', sans-serif; color: var(-
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Carbon notification internals written by showAlert / warn-cards (no built-in structure in static markup) */
+/* Spacing for JS-written alerts inside the static error containers. */
 #single-error, #batch-error { margin-top: 1rem; }
-#single-error > p, #batch-error > p { font-weight: 400; }   /* Carbon marks __title 600; long messages read better 400 */
-#single-error .bx--btn, #batch-error .bx--btn { margin-top: .5rem; }
 
 .warn-card { margin: 1rem 0; }
-.warn-card .bx--toast-notification__title { font-weight: 600; font-size: 1rem; }
 .warn-card ul { margin: .25rem 0 0 1.2rem; padding: 0; }
 
 /* ── Verdict banner (no Carbon analogue — pass/flag/error strip) ───────────── */
@@ -240,7 +223,7 @@ input[type="file"] { font: 400 .875rem 'IBM Plex Sans', sans-serif; color: var(-
 
 /* Carbon has no verdict-color tag preset: support-warning tint (flag/missing).
    Corners flat per the IBM grid — Carbon's own tag ships rounded (.9375rem); the
-   spinner circle below is a status glyph, not a box, so it stays round. */
+   spinner circle above is a status glyph, not a box, so it stays round. */
 .bx--tag { border-radius: 0; }
 .pill {
   margin-right: .5rem;

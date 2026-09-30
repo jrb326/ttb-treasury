@@ -38,7 +38,7 @@ const CSV_COLUMNS = {
   bottler: "bottler",
 };
 
-// ── right-pane viewer (SIEM split: evidence at right) ───────────────────────
+// ── right-pane viewer (SIEM split: evidence at right) ────────────────────────
 const viewer = { url: null, own: false, fit: true, scale: 1, rotate: 0 };
 const ZOOM_STEPS = [1, 1.25, 1.5, 2, 3, 4];
 
@@ -98,9 +98,11 @@ const state = {
   csv: new Map(),            // filename -> {brandName, classType, ...}
   batchRunning: false,
   batchChunks: [],           // File[][]
+  batchResults: [],          // per-file results, appended as chunks land
   batchDone: 0,              // files with a verdict
   batchStartMs: 0,
   widgetId: null,
+  chunkIndex: 0,             // current chunk of a running batch (retry resumes here)
 };
 
 // ── tiny DOM helpers (server strings only ever go through textContent) ───────
@@ -115,8 +117,8 @@ function clear(node) { while (node.firstChild) node.removeChild(node.firstChild)
 function show(node, on) { node.hidden = !on; }
 
 // ── Turnstile lifecycle ──────────────────────────────────────────────────────
-// The API is ready only when window.turnstile.render is a function — an element
-// with id="turnstile" (or a stub) would otherwise shadow the script's global.
+// The API is ready only when window.turnstile.render is a function: api.js is
+// loaded async/defer, so the global may still be absent when app.js runs.
 function turnstileReady() {
   return typeof window.turnstile !== "undefined" && typeof window.turnstile.render === "function";
 }
@@ -161,7 +163,7 @@ function getToken() {
 }
 
 // ── verify request ───────────────────────────────────────────────────────────
-// Resolves with results[]; rejects with {kind: "token"|"unreachable"|"http400", text}.
+// Resolves with results[]; rejects with {kind: "token"|"unreachable"|"budget"|"http400", text}.
 async function verifyRequest(items) {
   const token = getToken();
   if (!token) throw { kind: "token" };
@@ -214,18 +216,18 @@ function showAlert(container, message, onRetry, retryLabel) {
   show(container, true);
   container.appendChild(el("span", null, message));
   if (onRetry) {
-    const b = el("button", "btn", retryLabel || "Try again");
+    const b = el("button", "bx--btn bx--btn--tertiary bx--btn--sm", retryLabel || "Try again");
     b.type = "button";
     b.addEventListener("click", onRetry);
     container.appendChild(b);
   }
 }
 
-// ── result rendering (shared by single card and batch rows) ─────────────────
+// ── result rendering (shared by single card and batch rows) ──────────────────
 function statusPill(status) {
-  // Carbon tag presets: neutral gray (pass / not checked), support-tinted when
-  // attention is needed, support-red for errors. Carbon has no green tag — a
-  // passive "pass" intentionally stays neutral rather than inventing colors.
+  // Carbon tag presets: neutral gray (pass / not checked), support-warning tint
+  // when attention is needed, support-red for errors. Carbon does ship a green
+  // tag; a passive "pass" intentionally stays neutral instead.
   const role = status === "error" ? "red" : "gray";
   const warn = status === "flag" || status === "missing" ? " pill-warn" : "";
   const s = el("span", "bx--tag bx--tag--" + role + " pill" + warn, PILL_LABEL[status] || status || "—");
@@ -314,7 +316,7 @@ function renderResult(result) {
   return wrap;
 }
 
-// ── federal regulation checklist (server-computed over VLM observations) ────
+// ── federal regulation checklist (server-computed over VLM observations) ─────
 function renderRegList(result, target) {
   clear(target);
   const checks = Array.isArray(result.regulations) ? result.regulations : [];
@@ -336,7 +338,7 @@ function showRegCard(result) {
   show($("reg-card"), !!ok);
 }
 
-// ── CSV parsing (RFC4180-ish: quotes, doubled quotes, CRLF) ─────────────────
+// ── CSV parsing (RFC4180-ish: quotes, doubled quotes, CRLF) ──────────────────
 function parseCsv(text) {
   const rows = [];
   let row = [], field = "", inQ = false, i = 0;
@@ -388,7 +390,7 @@ function csvEscape(v) {
   return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
 }
 
-// ── demo: pre-loaded TTB sample labels ──────────────────────────────────────
+// ── demo: pre-loaded TTB sample labels ───────────────────────────────────────
 // Synthetic six from scripts/make-labels.mjs + three real user labels whose
 // records below came from live extraction runs (see README "Sample labels").
 const DEMO_APPS = {
@@ -441,7 +443,7 @@ const DEMO_APPS = {
     bottler: "brewed by Inlet Bay Brewing, 3 Dock St, San Pedro, CA",
   },
   // Real labels (user-supplied photos with graphics behind text) — records
-  // taken from the live extraction runs logged this session.
+  // taken from live extraction runs.
   "demo-wheatbeer.png": {
     brandName: "Example Brewing Co.",
     classType: "Wheat Beer",
@@ -496,7 +498,7 @@ async function onDemoPick(e) {
   }
 }
 
-// ── photo → application form: the extraction IS the record we're building ───
+// ── photo → application form: the extraction IS the record we're building ────
 function prefillFromExtraction(ext) {
   if (!ext) return;
   const fill = function (id, value) { if (value) $(id).value = value; };
@@ -632,7 +634,7 @@ function onBatchCsv(e) {
       state.csv = csvToMap(parseCsv(String(reader.result)));
     } catch (err) {
       state.csv = new Map();
-      file_input_reset_csv(e);
+      resetCsvInput(e);
       showAlert($("batch-mismatch"),
         "That CSV couldn't be read. It needs a header row with a 'file' column — see samples.csv.");
       renderBatchPrep();
@@ -644,7 +646,7 @@ function onBatchCsv(e) {
   reader.readAsText(file);
 }
 
-function file_input_reset_csv(e) { e.target.value = ""; }
+function resetCsvInput(e) { e.target.value = ""; }
 
 function renderBatchPrep() {
   const box = $("batch-mismatch");
@@ -695,13 +697,13 @@ function appForFile(file) {
   if (rec.alcoholContent) app.alcoholContent = rec.alcoholContent;
   if (rec.netContents) app.netContents = rec.netContents;
   if (rec.countryOfOrigin) app.countryOfOrigin = rec.countryOfOrigin;
+  if (rec.bottler) app.bottler = rec.bottler;
   return app;
 }
 
 function setProgress(done, total, prefix) {
   show($("batch-progress"), true);
   $("batch-bar-fill").style.width = (total ? Math.round((done / total) * 100) : 0) + "%";
-  probeProgress();
   $("batch-progress-text").textContent =
     (prefix || ("Processing " + done + " / " + total + "…"));
 }
@@ -750,7 +752,7 @@ function finishBatch() {
   c.appendChild(el("span", "pill error", "Error: " + (counts.error || 0)));
   banner.appendChild(c);
 
-  const dl = el("button", "btn primary", "Download results CSV");
+  const dl = el("button", "bx--btn bx--btn--primary", "Download results CSV");
   dl.type = "button";
   dl.addEventListener("click", function () { downloadResultsCsv(results); });
   banner.appendChild(dl);
@@ -786,11 +788,6 @@ function batchError(err) {
   showAlert($("batch-error"), errorFor(err.kind, err.text) +
     " Files already checked are shown below; retrying continues from where it stopped.",
     retry, label);
-}
-
-/** Match Carbon's section title; React updates aria-valuenow, our static bar probes at 100. */
-function probeProgress() {
-  $("batch-progress").querySelector(".bx--progress-bar")?.setAttribute("aria-valuenow", "100");
 }
 
 async function runBatch(chunkIndex) {
@@ -869,7 +866,7 @@ $("viewer-zoom-in").addEventListener("click", function () { stepZoom(1); });
 $("viewer-zoom-out").addEventListener("click", function () { stepZoom(-1); });
 $("viewer-fit").addEventListener("click", function () { viewer.fit = true; viewer.scale = 1; viewerPaint(); });
 $("viewer-rotate").addEventListener("click", function () { viewer.rotate = (viewer.rotate + 90) % 360; viewerPaint(); });
-$("viewer-full").addEventListener("click", function () { if (viewer.url && viewer.own !== null) window.open(viewer.url, "_blank", "noopener"); });
+$("viewer-full").addEventListener("click", function () { if (viewer.url) window.open(viewer.url, "_blank", "noopener"); });
 
 // Paste an image anywhere → single flow (SIEM analyst muscle memory).
 document.addEventListener("paste", function (e) {

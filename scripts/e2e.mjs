@@ -7,7 +7,7 @@
  * Exits non-zero on any failed expectation; prints latencies vs 5s goal.
  */
 import puppeteer from "puppeteer-core";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 
 const BASE = process.argv[2] || "http://localhost:8787";
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -51,7 +51,7 @@ const results = { single: null, batch: null, latencies: [] };
 // full flow run on machines where the managed challenge is refused. Production
 // keeps the real sitekey/secret — set only when explicitly asked to.
 const TEST_CREDS = process.env.E2E_TEST_CREDENTIALS === "1";
-const TEST_SITEKEY = "1x000000000000000000000AA";
+const TEST_SITEKEY = "1x00000000000000000000AA";
 const REAL_SITEKEY = "0x4AAAAAAFHT209vgWKKWBl2";
 
 try {
@@ -90,7 +90,7 @@ try {
   const t0 = Date.now();
   await page.click("#single-check");
 
-  // If the token path blocks (expired), tick and retry once like an agent would.
+  // If the token path blocks (expired), tick and retry like an agent would (≤3 attempts).
   for (let attempt = 0; attempt < 3; attempt++) {
     await Promise.race([
       page.waitForSelector("#single-result .result", { visible: true, timeout: 40000 }),
@@ -113,7 +113,7 @@ try {
   if (singleLat) results.latencies.push({ file: "oldtom-pass.png", s: Number(singleLat[1]) });
   console.log(`  wall=${singleWall.toFixed(1)}s`);
 
-  // ── Batch flow (5 fixtures + CSV), token resets between requests ───────────
+  // ── Batch flow (6 fixtures + CSV), token resets between requests ───────────
   console.log("== batch flow ==");
   await page.setInputFiles("#batch-files", BATCH.map((f) => `public/${f}`));
   await page.setInputFiles("#batch-csv", "public/samples.csv");

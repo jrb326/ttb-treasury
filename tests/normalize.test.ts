@@ -188,6 +188,6 @@ describe("compareWarning heading-in-body tolerance", () => {
   });
   it("tampered text with heading still fails as mismatch", () => {
     const r = compareWarning("GOVERNMENT WARNING: drink responsibly daily.", "GOVERNMENT WARNING:", true);
-    expect(["similar", "mismatch"]).toContain(r.textMatch);
+    expect(r.textMatch).toBe("mismatch");
   });
 });

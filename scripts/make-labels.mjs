@@ -53,7 +53,7 @@ const CX = W / 2;
 
 /**
  * One centered <text> line.
- * opts: size, weight ("normal"|"700"), extra (raw attrs string), italic, dy via y.
+ * opts: size, weight ("normal"|"700"), extra (raw attrs string), fill; y is the baseline.
  */
 function line(text, y, { size = 32, weight = "normal", extra = "", fill = "#111" } = {}) {
   return `<text x="${CX}" y="${y}" text-anchor="middle" font-size="${size}" font-weight="${weight}" fill="${fill}" ${extra}>${esc(text)}</text>`;
@@ -61,7 +61,7 @@ function line(text, y, { size = 32, weight = "normal", extra = "", fill = "#111"
 
 /**
  * Build a label SVG.
- * spec: { brand, klass, abv, net, bottler?, warning?: "correct" | "titlecase" | "none" }
+ * spec: { brand, klass, abv, net, bottler?, warning?: "+"-joined modes: correct | titlecase | tiny | none }
  */
 function labelSvg(spec) {
   const parts = [];
